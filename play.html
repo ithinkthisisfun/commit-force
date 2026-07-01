@@ -364,7 +364,7 @@ function launchPlane(p){ joinEvent(p.author); planesActive.push({ n:p.n, title:p
   x:-30, y:26+Math.random()*44, vx:RUNSPEED*0.4+0.35+Math.random()*0.4, wob:Math.random()*6.28, fired:false, counted:false, phase:"fly", dead:false }); }
 function fireMissile(pl){
   if(pl.state==="merged"){                                            // merged PR -> a white parachute that drifts down (star on landing)
-    missiles.push({x:pl.x,y:pl.y+4,vx:(Math.random()*2-1)*0.3,vy:0.4,sway:Math.random()*6.28,life:900,chute:true}); return; }
+    missiles.push({x:pl.x,y:pl.y+4,vy:0.4,sway:Math.random()*6.28,drift:(Math.random()*2-1)*0.9,swayAmp:0.35+Math.random()*0.55,life:900,chute:true,n:pl.n}); return; }
   let best=null,bd=1e9; for(const o of OBS){ if(!o.spawned||o.done)continue; const sx=o.x-camX; if(sx<-10||sx>W+10)continue; const d=Math.abs(sx-pl.x); if(d<bd){bd=d;best=o;} }
   const tx=best?(best.x-camX):pl.x+8, ty=GROUND_Y-camY-12, ang=Math.atan2(ty-pl.y,tx-pl.x), sp=3.4;
   missiles.push({x:pl.x,y:pl.y+3,vx:Math.cos(ang)*sp,vy:Math.max(0.6,Math.sin(ang)*sp),life:75,color:"#ff5a4a"});   // rejected PR -> red bomb
@@ -394,7 +394,7 @@ function updatePlanes(frontX){
   const groundS=GROUND_Y-camY-8;
   for(const m of missiles){
     if(m.chute){                                                       // merged PR: white parachute drifting down ~half bomb speed
-      m.vy=Math.min(1.3,m.vy+0.02); m.sway+=0.06; m.x+=m.vx+Math.sin(m.sway)*0.4; m.y+=m.vy; m.life--;
+      m.vy=Math.min(1.3,m.vy+0.02); m.sway+=0.055; m.x+=m.drift+Math.sin(m.sway)*m.swayAmp; m.y+=m.vy; m.life--;
       if(m.y>=groundS){ m.dead=true;                                   // touches down -> the commit it delivered
         stars.push({x:m.x+camX,y:groundS+camY-4,vx:(Math.random()*2-1)*1.0+0.3,vy:-4.2-Math.random()*1.6,life:54+Math.random()*16,spin:Math.random()*6,color:"#f5d76e",sha:"",bot:false}); SFX.sparkle(); }
       continue; }
@@ -427,7 +427,8 @@ function drawMissile(m){ const x=Math.round(m.x), y=Math.round(m.y);
     g.fillStyle="#eef"; g.beginPath(); g.moveTo(x-7,y-2); g.quadraticCurveTo(x,y-11,x+7,y-2); g.closePath(); g.fill();  // canopy
     px(x-7,y-2,14,1,"#cdd4e0");                                        // canopy rim
     g.strokeStyle="#b8c0cc"; g.lineWidth=1; g.beginPath(); g.moveTo(x-6,y-1); g.lineTo(x,y+5); g.moveTo(x+6,y-1); g.lineTo(x,y+5); g.stroke();  // shrouds
-    px(x-2,y+5,4,3,"#5cd06a"); return; }                              // green payload
+    px(x-2,y+5,4,3,"#5cd06a");                                        // green payload
+    g.fillStyle="#cdd4e0"; g.font="6px 'Courier New',monospace"; g.textAlign="center"; g.fillText("#"+m.n,x,y-13); g.textAlign="left"; return; }  // PR id
   g.globalAlpha=0.7; g.fillStyle="#ffcf7a"; px(x-3,y-1,3,2); px(x-5,y-1,2,1); g.globalAlpha=1;   // flame trail
   g.fillStyle=m.color; px(x-1,y-1,4,2); px(x+3,y-1,1,2); }                                        // body + tip
 
@@ -576,7 +577,7 @@ function updateActor(a,frontX){
     if(a.prefersHigh && a.onGround && a.jumpCd<=0){
       for(const p of platforms){ if(a.x>p.x0-26 && a.x<p.x0+8 && a.y>p.y+2){ doJump(a); a.jumpCd=22; break; } }
     } else if(inZone(a.x)&&a.onGround&&a.jumpCd<=0&&Math.random()<0.045){ doJump(a); a.jumpCd=18; }
-    if(a.onGround && a.jumpCd<=0 && terrainH(a.x+8)-terrainH(a.x)>=2){ a.vy=-4.6; a.onGround=false; a.jumpCd=12; }   // little hop over a rising bump
+    if(a.onGround && a.jumpCd<=0 && terrainH(a.x+9)-terrainH(a.x)>=2){ a.vy=-5.2; a.onGround=false; a.jumpCd=12; }   // hop up onto a rising terrain block
   }
   if(a.act!=="idle"){ a.actT--; if(a.act==="kick") a.vy=Math.min(MAXFALL,a.vy+GRAV*0.4);
     if(a.actT<=0||(a.act==="kick"&&a.onGround)) a.act="idle"; }
@@ -614,12 +615,15 @@ function drawBG(){
   for(let i=0;i<18;i++){ const x=i*80-(camX*0.5)%80; px(x,60,24,GROUND_Y-camY-60,"#2c1119"); px(x+2,60,3,GROUND_Y-camY-60,"#3a1622"); }
   g.fillStyle="#5a2028"; for(let i=0;i<50;i++){ let x=(i*89-camX*0.15)%W; if(x<0)x+=W; px(x,(i*47)%80,1,1,"#5a2028"); }
 }
-// gentle rolling terrain: occasional 2-3px bumps so the ground isn't a dead-flat line
-// and the crew hops over the rises (deterministic, world-fixed)
-function terrainH(x){ const c=Math.floor(x/12); let s=Math.sin(c*127.1)*43758.5453; s-=Math.floor(s); return s<0.12?3:s<0.19?2:0; }
+// terrain: occasional one-brick-high plateaus (the big blocks) the crew hops onto and over.
+// Trucks ignore this -- they roll on flat GROUND_Y and are drawn in front of the terrain.
+const TCELL=32;
+function terrainH(x){ const c=Math.floor(x/TCELL); let s=Math.sin(c*127.1)*43758.5453; s-=Math.floor(s); return s<0.18?TS:0; }
 function drawGround(){ const gy=GROUND_Y-camY, c0=Math.floor(camX/TS)-1;
   for(let r=0; gy+r*TS<H+TS; r++) for(let c=c0; c*TS-camX<W; c++) brick(c*TS-camX, gy+r*TS, TS);
-  for(let x=0;x<W;x++){ const h=terrainH(camX+x); if(h>0){ px(x,gy-h,1,h,"#48242c"); px(x,gy-h,1,1,"#6b3540"); } } }   // rough bumps on top
+  const cc0=Math.floor(camX/TCELL)-1;                                   // raised chunks (brick-high plateaus) on top
+  for(let cc=cc0; cc*TCELL-camX<W; cc++){ if(terrainH(cc*TCELL+2)>0){ const sx=cc*TCELL-camX;
+    for(let bx=0;bx<TCELL;bx+=TS) brick(sx+bx,gy-TS,TS); } } }
 function drawPlatforms(){ for(const p of platforms){ const x0=p.x0-camX, x1=p.x1-camX, y=p.y-camY; if(x1<-20||x0>W+20)continue;
   for(let x=Math.floor(x0/TS)*TS; x<x1; x+=TS) brick(Math.max(x,x0)|0, y, Math.min(TS,x1-x)|0); px(x0,y+TS,x1-x0,1,"#1a0d11"); } }
 
