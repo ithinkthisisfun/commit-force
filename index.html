@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Force</title>
+<style>
+  :root{ --red:#c92b2b; --red2:#e04a4a; --ink:#e7b7bd; --panel:#1a0e12; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:#0a0608; color:var(--ink);
+    font-family:"Courier New",monospace; display:flex; align-items:center; justify-content:center; }
+  #card{ position:relative; z-index:1; width:min(560px,92vw); background:var(--panel); border:3px solid #2a1015;
+    box-shadow:0 0 0 3px #000, 0 0 60px #000 inset; padding:26px 26px 22px; }
+  h1{ margin:0 0 2px; font-size:37px; letter-spacing:3px; color:var(--red); text-shadow:3px 3px 0 #000, 0 0 18px rgba(201,43,43,.5); }
+  .sub{ margin:0 0 18px; font-size:12px; color:#c7b3b8; letter-spacing:2px; }
+  label{ display:block; font-size:11px; letter-spacing:1px; color:#c7b3b8; margin:14px 0 5px; }
+  input,select{ width:100%; padding:11px 12px; background:#0c0709; color:#ffd; border:2px solid #3a1620; font-family:inherit; font-size:16px; letter-spacing:1px; outline:none; }
+  select{ font-size:14px; padding:10px 12px; }
+  select:disabled{ color:#6a5a5f; }
+  input:focus,select:focus{ border-color:var(--red); }
+  #bg{ position:fixed; inset:0; width:100%; height:100%; border:0; opacity:.82; filter:saturate(1) brightness(.95); pointer-events:none; z-index:0; }
+  #veil{ position:fixed; inset:0; background:rgba(10,6,8,.28); pointer-events:none; z-index:0; }
+  .row{ display:flex; gap:12px; } .row>div{ flex:1; }
+  small{ color:#c7b3b8; font-size:10px; } small a{ color:#c7b3b8; }
+  .ex{ color:#c7b3b8; cursor:pointer; text-decoration:underline; }
+  button{ margin-top:20px; width:100%; padding:13px; background:var(--red); color:#fff; border:none; font-family:inherit; font-size:17px; letter-spacing:3px; cursor:pointer; text-shadow:1px 1px 0 #000; box-shadow:0 4px 0 #7a1a1a; }
+  button:hover{ background:var(--red2); } button:active{ transform:translateY(3px); box-shadow:0 1px 0 #7a1a1a; } button:disabled{ background:#4a2530; box-shadow:0 4px 0 #2a1015; cursor:default; }
+  #bar{ margin-top:22px; height:16px; background:#0c0709; border:2px solid #3a1620; display:none; }
+  #fill{ height:100%; width:0%; background:linear-gradient(90deg,var(--red),var(--red2)); transition:width .18s; }
+  #statusrow{ margin-top:8px; min-height:16px; display:flex; align-items:center; gap:8px; }
+  #status{ font-size:12px; color:#c7b3b8; letter-spacing:1px; }
+  #spin{ display:none; width:12px; height:12px; flex:none; border:2px solid #4a2530; border-top-color:var(--red2); border-radius:50%; animation:spin .7s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  #err{ margin-top:10px; color:var(--red2); font-size:12px; min-height:14px; }
+  #warn{ margin-top:6px; color:#e6c36a; font-size:11px; min-height:13px; }
+  .note{ margin-top:14px; font-size:11px; color:#c7b3b8; line-height:1.55; }
+  .note a{ color:#c7b3b8; }
+  .help{ display:inline-block; width:13px; height:13px; line-height:12px; text-align:center; border:1px solid #7a3038; border-radius:50%; color:#d59aa2; font-size:9px; cursor:pointer; margin-left:5px; vertical-align:middle; user-select:none; }
+  .help:hover{ border-color:var(--red2); color:#fff; }
+  .hint{ color:#c7b3b8; font-size:10px; margin-left:6px; }
+  .tip{ position:fixed; z-index:20; max-width:250px; background:#241016; border:2px solid var(--red); color:#eaddd0; font-size:11px; line-height:1.5; padding:9px 11px; box-shadow:0 6px 20px #000; }
+</style>
+</head>
+<body>
+<iframe id="bg" src="play.html?bg=1" tabindex="-1" scrolling="no" aria-hidden="true"></iframe>
+<div id="veil"></div>
+<div id="card">
+  <h1>COMMIT FORCE</h1>
+  <p class="sub">RUN A REPO'S ISSUE LOG AS A 16-BIT GAUNTLET</p>
+
+  <label>GITHUB REPO <span class="help" data-help="Any public GitHub repo, as owner/name (a full https URL works too). Your browser reads it straight from GitHub — nothing is sent to this site's server.">?</span></label>
+  <input id="repo" placeholder="owner/name" autofocus spellcheck="false" autocomplete="off">
+  <small>e.g. <span class="ex" data-r="cli/cli">cli/cli</span> ·
+    <span class="ex" data-r="sveltejs/svelte">sveltejs/svelte</span> ·
+    <span class="ex" data-r="vitejs/vite">vitejs/vite</span></small>
+
+  <label>COMMIT BRANCH <span class="help" data-help="Stars are the commits from ONE branch. Pick the branch where the work happened — otherwise a repo whose activity lived on a side branch shows no stars at all. Issues and PRs are repo-wide, so they're unaffected.">?</span></label>
+  <select id="branch" disabled><option>—</option></select>
+
+  <div class="row">
+    <div><label>ISSUES <span class="help" data-help="Roughly half the total issue-trucks: e.g. 80 makes ~160 trucks, split to match the repo's REAL open-vs-closed ratio (not a fake 50/50). Higher = a denser, longer run and more GitHub requests.">?</span><span class="hint" id="truckhint"></span></label><input id="limit" type="number" value="80" min="10" max="200"></div>
+    <div><label>COMMITS <span class="help" data-help="How many recent commits to pull. Each is flung off the runners as a star; bot/dependabot commits become drones, and every new contributor triggers a 'joined' note. Higher = a bigger star shower but a slower load.">?</span></label><input id="commits" type="number" value="400" min="0" max="2000" step="100"></div>
+  </div>
+
+  <button id="go">GO</button>
+  <div id="bar"><div id="fill"></div></div>
+  <div id="statusrow"><span id="status"></span><span id="spin"></span></div>
+  <div id="err"></div>
+  <div id="warn"></div>
+  <div class="note">No sign-in, no token — your browser reads GitHub directly and nothing touches this site's server. GitHub allows ~60 requests/hour per IP (a few builds); if you hit that, wait a few minutes. Source is <a href="https://github.com/ithinkthisisfun/commit-force" target="_blank" rel="noreferrer">public on GitHub</a>.</div>
+</div>
+
+<script type="module">
+import { buildLevelFromGitHub, checkRepo, getBranches, getCounts, RateLimitError } from "./gitboy-github.js";
+import { normalizeRepo } from "./gitboy-core.js";
+const $ = id => document.getElementById(id);
+const repo=$("repo"), go=$("go"), bar=$("bar"), fill=$("fill"), status=$("status"), err=$("err");
+document.querySelectorAll(".ex").forEach(e => e.onclick = () => { repo.value = e.dataset.r; repo.focus(); });
+repo.value = sessionStorage.getItem("gitboy_lastrepo") || "";
+repo.addEventListener("keydown", e => { if (e.key === "Enter") start(); });
+go.onclick = start;
+
+// help tooltips
+const tip = document.createElement("div"); tip.className = "tip"; tip.style.display = "none"; document.body.appendChild(tip);
+document.querySelectorAll(".help").forEach(h => { h.onclick = e => { e.stopPropagation();
+  if (tip.style.display === "block" && tip._for === h) { tip.style.display = "none"; return; }
+  tip.textContent = h.dataset.help; tip._for = h; tip.style.display = "block";
+  const r = h.getBoundingClientRect();
+  tip.style.left = Math.max(8, Math.min(innerWidth - 264, r.left - 8)) + "px";
+  tip.style.top = (r.bottom + 8) + "px";
+}; });
+document.addEventListener("click", () => { tip.style.display = "none"; });
+
+// live truck estimate
+const truckhint = $("truckhint"), limitEl = $("limit");
+const updHint = () => { truckhint.textContent = "≈ " + ((+limitEl.value || 0) * 2) + " trucks"; };
+limitEl.addEventListener("input", updHint); updHint();
+
+// two-step recognizer: (1) verify the repo exists (fast) -> (2) load branches with a
+// spinner + "loading branches…" and default-select the repo's default branch -> enable GO.
+// Issue/PR counts load in the background afterward and never gate GO.
+const branchSel = $("branch"), spin = $("spin");
+let repoOk = false, branchesOk = false, checkSeq = 0;
+const setGo = () => { go.disabled = !(repoOk && branchesOk); };
+go.disabled = true;
+const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+const recheck = debounce(async () => {
+  const norm = normalizeRepo(repo.value.trim());
+  repoOk = branchesOk = false; setGo();
+  branchSel.innerHTML = ""; branchSel.disabled = true; err.textContent = ""; $("warn").textContent = "";
+  if (!norm.includes("/") || norm.split("/").some(p => !p)) { spin.style.display = "none"; status.textContent = ""; return; }
+  const my = ++checkSeq;
+
+  // step 1 — does the repo exist? (one fast request)
+  status.textContent = "checking repo…"; spin.style.display = "inline-block";
+  let info;
+  try { info = await checkRepo(norm); }
+  catch (e) {
+    if (my !== checkSeq) return;
+    spin.style.display = "none"; status.textContent = "";
+    err.textContent = "✕ " + (/404|not found/i.test(e.message || "") ? "repo not found (or private)" : (e.message || "not found"));
+    return;
+  }
+  if (my !== checkSeq) return;
+  repoOk = true;
+
+  // step 2 — load the branch list, default-select the repo's default branch
+  status.textContent = "loading branches…";
+  let branches;
+  try { branches = await getBranches(norm, info.defaultBranch); }
+  catch (e) {
+    if (my !== checkSeq) return;
+    spin.style.display = "none"; status.textContent = "";
+    err.textContent = "✕ " + (e.message || e);
+    return;
+  }
+  if (my !== checkSeq) return;
+  branches.forEach(b => { const o = document.createElement("option"); o.value = b; o.textContent = b; branchSel.appendChild(o); });
+  branchSel.value = info.defaultBranch; branchSel.disabled = false;
+  branchesOk = true; spin.style.display = "none";
+  status.textContent = "repo ✓ · " + branches.length + " branch" + (branches.length !== 1 ? "es" : "");
+  setGo();
+
+  // step 3 (background) — issue/PR heads-up; does not gate GO
+  getCounts(norm).then(({ issues, prs }) => {
+    if (my !== checkSeq || issues == null || prs == null) return;
+    $("warn").textContent = (issues === 0 && prs === 0) ? "⚠ 0 issues & 0 PRs — you'll see commit-stars only"
+      : issues === 0 ? "⚠ no issues → no trucks (planes & stars only)"
+      : prs === 0 ? "⚠ no PRs → no planes" : "";
+  }).catch(() => {});
+}, 350);
+repo.addEventListener("input", recheck);
+if (repo.value.trim()) recheck();
+
+let busy = false;
+async function start(){
+  if (busy || !(repoOk && branchesOk)) return;
+  const r = repo.value.trim(); err.textContent = "";
+  busy = true; go.disabled = true; go.textContent = "LOADING…"; bar.style.display = "block"; fill.style.width = "3%"; status.textContent = "contacting github…";
+  try {
+    const level = await buildLevelFromGitHub(r, {
+      branch: branchSel.value, limit: +($("limit").value || 80), commits: +($("commits").value || 400),
+      onProgress: (p, m) => { fill.style.width = Math.max(3, p) + "%"; if (m) status.textContent = m; },
+    });
+    sessionStorage.setItem("gitboy_lastrepo", level.repo);
+    sessionStorage.setItem("GITBOY_LEVEL", JSON.stringify(level));
+    fill.style.width = "100%";
+    if (level.commitsError) {
+      status.textContent = `${level.counts.total} trucks · ${level.span.days}-day window`;
+      $("warn").textContent = "⚠ " + level.commitsError + " — starting without the commit-stars";
+    } else {
+      status.textContent = `${level.counts.total} trucks · ${level.counts.commits} commits · ${level.span.days}-day window`;
+    }
+    setTimeout(() => { location.href = "play.html"; }, level.commitsError ? 2200 : 400);
+  } catch (e) {
+    if (e instanceof RateLimitError) {
+      const mins = Math.max(1, Math.round((e.resetMs - Date.now()) / 60000));
+      err.textContent = `✕ GitHub's public rate limit hit (60/hr) — try again in ~${mins} min`;
+    } else { err.textContent = "✕ " + (e.message || e); }
+    reset();
+  }
+}
+function reset(){ busy = false; go.disabled = !(repoOk && branchesOk); go.textContent = "GO"; }
+</script>
+</body>
+</html>

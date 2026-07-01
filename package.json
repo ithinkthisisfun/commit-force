@@ -1,0 +1,6 @@
+{
+  "name": "commit-force",
+  "private": true,
+  "type": "module",
+  "description": "Commit Force — a GitHub repo's history played as a 16-bit side-scroller. Fully static; the browser talks to GitHub directly."
+}
