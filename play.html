@@ -393,7 +393,15 @@ function updatePlanes(frontX){
   for(const m of missiles){ m.x+=m.vx; m.y+=m.vy; m.vy+=0.05; m.life--;
     if(m.y>=groundS){ m.dead=true; shake=Math.max(shake,3);
       for(let i=0;i<13;i++) fx.push({x:m.x+camX,y:(groundS)+camY,vx:(Math.random()*2-1)*2.5,vy:-Math.random()*2.6,life:18+Math.random()*12,color:Math.random()<0.5?m.color:"#ffd"});
-      if(m.merged){ stars.push({x:m.x+camX,y:groundS+camY-4,vx:(Math.random()*2-1)*1.2+0.4,vy:-4.6-Math.random()*1.8,life:54+Math.random()*16,spin:Math.random()*6,color:"#f5d76e",sha:"",bot:false}); SFX.sparkle(); } } }
+      if(m.merged){                                                    // merged PR -> the commit it lands
+        stars.push({x:m.x+camX,y:groundS+camY-4,vx:(Math.random()*2-1)*1.2+0.4,vy:-4.6-Math.random()*1.8,life:54+Math.random()*16,spin:Math.random()*6,color:"#f5d76e",sha:"",bot:false}); SFX.sparkle();
+      } else {                                                         // rejected PR's bomb -> splat any dudes in the splash zone
+        const ix=m.x+camX; let hit=false;
+        for(const a of actors){ if(a.riding) continue;
+          if(Math.abs(a.x-ix)<40){ a.vy=-5.5-Math.random()*2; a.vx=(a.x<ix?-1:1)*(2.6+Math.random()*1.8); a.onGround=false; a.act="idle"; a.actT=0;
+            gib(a.x,a.y-8,8); addSplat(a.x); burst(a.x,a.y-8,"#b81f1f",7,2.4); hit=true; } }
+        if(hit){ shake=Math.max(shake,7); SFX.grunt(); }
+      } } }
   planesActive=planesActive.filter(pl=>!pl.dead);
   missiles=missiles.filter(m=>!m.dead && m.life>0);
 }
