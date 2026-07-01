@@ -271,7 +271,7 @@ function initTruck(o){ o.spawned=false; o.done=false; o.phase="pending"; o.rider
   if(o.boss) o.roof=GROUND_Y-25;                            // war rig: crew stand on the long tank tops
   // on-screen battle ~ the issue's open->close lifetime (floor so short-lived aren't instant, cap for pacing)
   let dur=Math.max(55, Math.min(170, Math.round(55 + (o.life||0)*900)));
-  o.dur = o.boss ? Math.round(dur*2.4)+70 : dur; }
+  o.dur = o.boss ? Math.round(dur*3.6)+320 : dur; }   // meatier boss brawl (~8-15s)
 OBS.forEach(initTruck);
 const BOSS=OBS.find(o=>o.boss)||null;                      // at most one boss truck
 
