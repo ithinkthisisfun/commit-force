@@ -71,14 +71,18 @@ export async function getCounts(repoRaw, token = "") {
   try { issues = await searchTotal(repo, "type:issue", token); prs = await searchTotal(repo, "type:pr", token); } catch (e) { if (e instanceof RateLimitError) throw e; }
   return { issues, prs };
 }
-// Suggested repos ~ "trending": the most-starred repos created in the last `days`.
-// (github.com/trending is an HTML page with no CORS — the browser can't read it — so the
-// official Search API is the reliable client-side stand-in.) Fails soft: caller keeps its seeds.
-export async function getSuggestedRepos(token = "", days = 30, count = 12) {
-  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
-  const q = encodeURIComponent(`created:>${since} stars:>10`);
-  const j = await gh(`/search/repositories?q=${q}&sort=stars&order=desc&per_page=${count}`, token);
-  return (j.items || []).map(r => ({ repo: r.full_name, stars: r.stargazers_count || 0 }));
+// Suggested repos: big, active, established projects with busy issue trackers — the ones
+// that make the richest gauntlets. Highly-starred repos pushed this week, ranked by open
+// help-wanted issues (which filters out the awesome-list/book repos that sort-by-stars
+// surfaces). github.com/trending is HTML with no CORS, so this Search API query is the
+// client-side stand-in. Fails soft: the caller keeps its seeds. Lightly rotated per load.
+export async function getSuggestedRepos(token = "", count = 12) {
+  const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const q = encodeURIComponent(`stars:>5000 pushed:>${since}`);
+  const j = await gh(`/search/repositories?q=${q}&sort=help-wanted-issues&order=desc&per_page=30`, token);
+  const pool = (j.items || []).map(r => ({ repo: r.full_name, stars: r.stargazers_count || 0 }));
+  for (let i = pool.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); [pool[i], pool[k]] = [pool[k], pool[i]]; }
+  return pool.slice(0, count).sort((a, b) => b.stars - a.stars);
 }
 // Combined lookup (existence + branches + counts) — used by the CLI / back-compat.
 export async function getRepoInfo(repoRaw, token = "") {
