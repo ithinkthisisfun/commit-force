@@ -20,16 +20,48 @@ issue-trucks, flinging commit-stars, dodging PR airplanes — compressed into ~a
 
 ## Run locally
 
-```
-node server.mjs      # then open http://localhost:8787/
-```
-Or serve the folder with any static server. (ES modules need `http://`, not `file://`.)
+The whole thing is static — clone it and serve the folder over HTTP. (ES modules don't
+load over `file://`, so you do need a server; any static server works.)
 
-## Auth / rate limits
+```bash
+git clone https://github.com/ithinkthisisfun/commit-force
+cd commit-force
 
-- **Public repos work with no login** (GitHub allows ~60 requests/hr per IP).
-- For **private repos** or a higher limit (5,000/hr), paste a GitHub token — it's kept
-  **only in your browser** (localStorage) and sent **only to github.com**.
+# option A — the bundled zero-dependency Node server
+node server.mjs                 # -> http://localhost:8787/
+
+# option B — any static server you already have
+python3 -m http.server 8787     # -> http://localhost:8787/
+npx serve .                     # -> http://localhost:3000/
+```
+
+Then open the URL, type a repo (e.g. `sveltejs/svelte`), pick a branch, and hit **GO**.
+All the fetching happens in your browser against `api.github.com`; the local server only
+hands over the HTML/JS. (`server.mjs` needs a reasonably recent Node — v18+.)
+
+## Rate limits
+
+Unauthenticated GitHub allows **~60 requests/hour per IP** — enough for a few builds.
+There is deliberately **no token field**: a public-repo toy shouldn't ask you to trust a
+web page with a credential, and with nothing to steal the "is this page doing something
+shady?" question goes away. If you hit the limit, wait a few minutes. (Private repos
+aren't supported from the page for the same reason — see the `gh` path below if you need
+one.)
+
+## Optional: pre-bake a level with the `gh` CLI
+
+`build-level.mjs` fetches a repo through the **authenticated GitHub CLI** (much higher
+limits, and private repos work) and writes a `level-data.js` that sets
+`window.GITBOY_LEVEL`:
+
+```bash
+gh auth login                                       # once
+node build-level.mjs sveltejs/svelte --commits 400 --out level-data.js
+```
+
+To play that pre-baked level instead of using the loader, add
+`<script src="level-data.js"></script>` just before the game script in `play.html`, then
+open `play.html` directly.
 
 ## How a repo maps to the game
 
