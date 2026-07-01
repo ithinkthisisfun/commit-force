@@ -62,7 +62,6 @@
   .note a{ color:#c7b3b8; }
   .help{ display:inline-block; width:13px; height:13px; line-height:12px; text-align:center; border:1px solid #7a3038; border-radius:50%; color:#d59aa2; font-size:9px; cursor:pointer; margin-left:5px; vertical-align:middle; user-select:none; }
   .help:hover{ border-color:var(--red2); color:#fff; }
-  .hint{ color:#c7b3b8; font-size:10px; margin-left:6px; }
   .tip{ position:fixed; z-index:20; max-width:250px; background:#241016; border:2px solid var(--red); color:#eaddd0; font-size:11px; line-height:1.5; padding:9px 11px; box-shadow:0 6px 20px #000; }
 </style>
 </head>
@@ -88,8 +87,8 @@
   <select id="branch" disabled><option>—</option></select>
 
   <div class="row">
-    <div><label>ISSUES <span class="help" data-help="Roughly half the total issue-trucks: e.g. 80 makes ~160 trucks, split to match the repo's REAL open-vs-closed ratio (not a fake 50/50). Higher = a denser, longer run and more GitHub requests.">?</span><span class="hint" id="truckhint"></span></label><input id="limit" type="number" value="80" min="10" max="200"></div>
-    <div><label>COMMITS <span class="help" data-help="How many recent commits to pull. Each is flung off the runners as a star; bot/dependabot commits become drones, and every new contributor triggers a 'joined' note. Higher = a bigger star shower but a slower load.">?</span></label><input id="commits" type="number" value="400" min="0" max="2000" step="100"></div>
+    <div><label>ISSUES <span class="help" data-help="Max issues to pull.">?</span></label><input id="limit" type="number" value="80" min="10" max="200"></div>
+    <div><label>COMMITS <span class="help" data-help="Max commits to pull.">?</span></label><input id="commits" type="number" value="400" min="0" max="2000" step="100"></div>
   </div>
 
   <button id="go">GO</button>
@@ -129,11 +128,6 @@ document.querySelectorAll(".help").forEach(h => { h.onclick = e => { e.stopPropa
   tip.style.top = (r.bottom + 8) + "px";
 }; });
 document.addEventListener("click", () => { tip.style.display = "none"; });
-
-// live truck estimate
-const truckhint = $("truckhint"), limitEl = $("limit");
-const updHint = () => { truckhint.textContent = "≈ " + ((+limitEl.value || 0) * 2) + " trucks"; };
-limitEl.addEventListener("input", updHint); updHint();
 
 // two-step lookup, kicked off ON DEMAND (the › button / Enter / a demo link) — NOT on every
 // keypress. (1) verify the repo exists (fast) -> (2) load branches with a spinner +
