@@ -4,3 +4,15 @@ level-data.js
 # scratch files from syntax checks
 _c.js
 _check.js
+_c.mjs
+_check.mjs
+
+# boss-art iteration scratch + reference images (local only)
+boss-preview.html
+boss-ingame-test.html
+boss-preview.png
+boss-render.png
+boss-ingame.png
+war rig.webp
+war-rig2.jpg
+war-rig3.jpeg

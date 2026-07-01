@@ -263,11 +263,12 @@ STARS_SRC.sort((a,b)=>a.x-b.x);
 const PLANES=(LV.planes||[]).map(p=>({ ...p, spawnX:START_X+p.t*TRACK_LEN, launched:false }));
 PLANES.sort((a,b)=>a.spawnX-b.spawnX);
 const RELEASES=(LV.releases||[]).map(r=>({ ...r, x:START_X+r.t*TRACK_LEN, hit:false, raise:0 }));
-const TRUCK_SIZES={ 1:{bw:22,ch:9,cargoH:9}, 2:{bw:30,ch:10,cargoH:11}, 3:{bw:40,ch:12,cargoH:15}, boss:{bw:96,ch:14,cargoH:22} };
+const TRUCK_SIZES={ 1:{bw:22,ch:9,cargoH:9}, 2:{bw:30,ch:10,cargoH:11}, 3:{bw:40,ch:12,cargoH:15}, boss:{bw:180,ch:14,cargoH:22} };
 function initTruck(o){ o.spawned=false; o.done=false; o.phase="pending"; o.riders=null; o.hadRider=false;
   o.x=0; o.vx=0; o.timer=0; o.wheel=0; o.boomT=0; o.cap=o.boss?3:1;   // how many crew ride it
   const g=TRUCK_SIZES[o.boss?"boss":o.size]||TRUCK_SIZES[2]; o.bw=g.bw; o.ch=g.ch; o.cargoH=g.cargoH;
   o.roof=GROUND_Y-3-o.ch-o.cargoH;                          // rider stands on the cargo top
+  if(o.boss) o.roof=GROUND_Y-25;                            // war rig: crew stand on the long tank tops
   // on-screen battle ~ the issue's open->close lifetime (floor so short-lived aren't instant, cap for pacing)
   let dur=Math.max(55, Math.min(170, Math.round(55 + (o.life||0)*900)));
   o.dur = o.boss ? Math.round(dur*2.4)+70 : dur; }
@@ -552,7 +553,7 @@ function update(){
 function updateActor(a,frontX){
   // ---- riding a truck: pinned on the roof, throwing punches ----
   if(a.riding){
-    const o=a.riding, n=o.riders?o.riders.length:1, tx=o.x + ((a.rideSlot||0)-(n-1)/2)*(o.boss?26:12);  // fan riders across the roof
+    const o=a.riding, n=o.riders?o.riders.length:1, tx=o.x + ((a.rideSlot||0)-(n-1)/2)*(o.boss?46:12);  // fan riders across the roof (wide for the war rig)
     a.x+=(tx-a.x)*0.45; a.y+=(o.roof-a.y)*0.45; a.vy=0; a.onGround=true; a.face=1;
     if(a.act!=="idle"){ a.actT--; if(a.actT<=0)a.act="idle"; }
     a.animT=0; return;
@@ -577,7 +578,7 @@ function updateActor(a,frontX){
     if(a.prefersHigh && a.onGround && a.jumpCd<=0){
       for(const p of platforms){ if(a.x>p.x0-26 && a.x<p.x0+8 && a.y>p.y+2){ doJump(a); a.jumpCd=22; break; } }
     } else if(inZone(a.x)&&a.onGround&&a.jumpCd<=0&&Math.random()<0.045){ doJump(a); a.jumpCd=18; }
-    if(a.onGround && a.jumpCd<=0 && terrainH(a.x+9)-terrainH(a.x)>=2){ a.vy=-5.2; a.onGround=false; a.jumpCd=12; }   // hop up onto a rising terrain block
+    if(a.onGround && a.jumpCd<=0){ const rise=terrainH(a.x+9)-terrainH(a.x); if(rise>=3){ a.vy=-Math.min(9,4.6+rise*0.35); a.onGround=false; a.jumpCd=9; } }   // hop up the terrain stairs
   }
   if(a.act!=="idle"){ a.actT--; if(a.act==="kick") a.vy=Math.min(MAXFALL,a.vy+GRAV*0.4);
     if(a.actT<=0||(a.act==="kick"&&a.onGround)) a.act="idle"; }
@@ -615,15 +616,14 @@ function drawBG(){
   for(let i=0;i<18;i++){ const x=i*80-(camX*0.5)%80; px(x,60,24,GROUND_Y-camY-60,"#2c1119"); px(x+2,60,3,GROUND_Y-camY-60,"#3a1622"); }
   g.fillStyle="#5a2028"; for(let i=0;i<50;i++){ let x=(i*89-camX*0.15)%W; if(x<0)x+=W; px(x,(i*47)%80,1,1,"#5a2028"); }
 }
-// terrain: occasional one-brick-high plateaus (the big blocks) the crew hops onto and over.
+// terrain: smooth-stepped stairs (up to ~4 steps high) so the crew hops around a lot.
 // Trucks ignore this -- they roll on flat GROUND_Y and are drawn in front of the terrain.
-const TCELL=32;
-function terrainH(x){ const c=Math.floor(x/TCELL); let s=Math.sin(c*127.1)*43758.5453; s-=Math.floor(s); return s<0.18?TS:0; }
+const TSTEP=7;
+function terrainH(x){ const n=Math.sin(x*0.021)+Math.sin(x*0.043+1.3)+Math.sin(x*0.009+2.4);   // -3..3 smooth
+  return Math.max(0,Math.min(4,Math.round((n+3)/6*4)))*TSTEP; }                                  // 0..4 steps
 function drawGround(){ const gy=GROUND_Y-camY, c0=Math.floor(camX/TS)-1;
   for(let r=0; gy+r*TS<H+TS; r++) for(let c=c0; c*TS-camX<W; c++) brick(c*TS-camX, gy+r*TS, TS);
-  const cc0=Math.floor(camX/TCELL)-1;                                   // raised chunks (brick-high plateaus) on top
-  for(let cc=cc0; cc*TCELL-camX<W; cc++){ if(terrainH(cc*TCELL+2)>0){ const sx=cc*TCELL-camX;
-    for(let bx=0;bx<TCELL;bx+=TS) brick(sx+bx,gy-TS,TS); } } }
+  for(let x=0;x<W;x++){ const h=terrainH(camX+x); if(h>0){ px(x,gy-h,1,h,"#48242c"); px(x,gy-h,1,1,"#6b3540"); } } }   // stepped surface
 function drawPlatforms(){ for(const p of platforms){ const x0=p.x0-camX, x1=p.x1-camX, y=p.y-camY; if(x1<-20||x0>W+20)continue;
   for(let x=Math.floor(x0/TS)*TS; x<x1; x+=TS) brick(Math.max(x,x0)|0, y, Math.min(TS,x1-x)|0); px(x0,y+TS,x1-x0,1,"#1a0d11"); } }
 
@@ -632,12 +632,68 @@ function wheel(sx,sy,ang){ g.save(); g.translate(sx,sy); g.rotate(ang);
   g.fillStyle="#4a3038"; g.beginPath(); g.arc(0,0,1.6,0,6.29); g.fill();
   g.strokeStyle="#6a4a52"; g.lineWidth=1; g.beginPath(); g.moveTo(-3,0); g.lineTo(3,0); g.moveTo(0,-3); g.lineTo(0,3); g.stroke(); g.restore(); }
 
+// ---- the boss: a Mad-Max war-rig road train (two long skull tankers + flatnose tractor) ----
+function drawWarRig(sx, gy, o){
+  const CHR="#c8ccd0",CHRM="#9aa0a6",CHRD="#6a7076",GUN="#4a4e54",GUNH="#8a9098",GUNM="#6a7078",GUND="#2e3238",GUNDD="#20242a";
+  const BODY="#5a5e64",BODYH="#7a7e84",BODYD="#34383e",TIRE="#0e0a0c",RIM="#d8d4c8",HUB="#7a4028",HUBH="#9a5836";
+  const FRAME="#241a16",RUST="#6a3a20",TAN="#8a6038",OLIVE="#3a3a2a",RED="#8c1010",REDH="#c02020",WHT="#efeee6",WHD="#cfcfc7";
+  const tank=(x0,x1,cy,r)=>{ const w=x1-x0,top=cy-r,bot=cy+r;
+    px(x0,top,w,r*2,GUN); px(x0,top,w,2,GUNH); px(x0,top+2,w,1,GUNM);
+    for(let yy=cy+1;yy<bot;yy++)for(let xx=x0;xx<x1;xx++)if(((xx+yy)&1)===0)px(xx,yy,1,1,GUND);
+    px(x0,bot-1,w,1,GUNDD); px(x0,top,1,r*2,GUND); px(x1-1,top,1,r*2,GUND);
+    px(x0+(w*0.25|0),top,1,r*2,GUNM); px(x0+(w*0.5|0),top,1,r*2,GUNM); px(x0+(w*0.75|0),top,1,r*2,GUNM);
+    px(x0+2,top-2,w-4,1,GUND); px(x0+2,top-1,w-4,1,CHRM); for(let xx=x0+4;xx<x1-2;xx+=4)px(xx,top-2,1,1,CHR); };
+  const camo=(x,y,c)=>{ px(x,y,4,3,c);px(x+3,y+2,3,2,c);px(x-2,y+1,3,2,c);px(x+1,y-1,2,2,c); };
+  const chain=(x,y)=>{ for(let i=0;i<13;i++){const a=x+i*3,b=y+Math.round(Math.sin(i*0.85)*2.2);px(a,b,2,1,CHRD);px(a,b,1,1,CHRM);} };
+  const spk=(x,y)=>{ px(x,y-1,5,1,GUND);px(x+1,y-2,3,1,GUNM);px(x+2,y-3,1,1,CHRM); };
+  const spkR=(x,y)=>{ px(x,y-2,1,5,GUND);px(x+1,y-1,1,3,GUNM);px(x+2,y,1,1,CHRM); };
+  const flm=(x,y)=>{ const f=(time+x*3)%6<3?0:1; px(x-1,y-1,3,1,"#ff5a2a");px(x-1,y-4,3,3,"#ff3a1a");px(x,y-8-f,2,4,"#ff9a3d");px(x,y-12-f,1,3,"#ffd24d"); };
+  const smk=(x,y)=>{ px(x-2,y,4,3,"rgba(44,40,44,0.7)");px(x-1,y-3,3,3,"rgba(64,60,64,0.5)");px(x,y-6,2,2,"rgba(88,84,88,0.35)"); };
+  const flag=(x,h)=>{ const wv=(time>>3)%2?4:3; px(x,gy-h,1,h,CHRD); px(x-wv,gy-h,wv,2,"#a02020"); px(x-wv,gy-h+1,wv,1,"#c8402e"); };   // trails backward (left)
+  const turret=(x)=>{ px(x-4,gy-31,8,7,"#33332c");px(x-4,gy-31,8,1,"#50504a");px(x-3,gy-30,2,2,"#20201a"); flag(x,40); };
+  const skull=(x,y)=>{ px(x-7,y-6,15,13,"#160c12");
+    for(let i=-6;i<=6;i++){const t=Math.round(i*0.7);px(x+i,y+t,1,1,WHD);px(x+i,y-t,1,1,WHD);}
+    px(x-7,y-5,2,2,WHT);px(x+6,y-5,2,2,WHT);px(x-7,y+4,2,2,WHT);px(x+6,y+4,2,2,WHT);
+    px(x-3,y-5,6,5,"#e8e8e0");px(x-3,y-5,6,1,"#fff");
+    px(x-2,y-3,2,2,"#160c12");px(x+1,y-3,2,2,"#160c12");px(x,y-1,1,1,"#160c12");
+    px(x-3,y,6,1,"#c4c4bc");px(x-2,y+1,1,1,"#e8e8e0");px(x,y+1,1,1,"#e8e8e0");px(x+2,y+1,1,1,"#e8e8e0"); };
+  const rw=(x)=>{ px(x-6,gy-8,12,10,TIRE);px(x-6,gy-8,12,1,"#241a1e");
+    for(let i=0;i<6;i++)px(x-6+i*2,gy-8,1,2,"#040406");
+    px(x-3,gy-5,6,5,RIM);px(x-3,gy-5,6,1,"#efeee6");px(x-2,gy-3,4,2,HUB);px(x-1,gy-3,2,1,HUBH); };
+
+  const TL=66, t1a=sx-90, t1b=t1a+TL, t2a=t1b+6, t2b=t2a+TL, cbL=t2b+6, cbR=cbL+18;
+  px(t1a-6, gy-7, (cbR+2)-(t1a-6), 4, FRAME); px(t1a-6, gy-6, 50, 2, "#3a241a");
+  [t1a+12,t1a+34,t1a+56, t2a+12,t2a+34,t2a+56, cbL+3,cbL+13].forEach(rw);
+  tank(t1a,t1b,gy-16,8); camo(t1a+16,gy-19,RUST); camo(t1a+40,gy-14,OLIVE); camo(t1a+56,gy-20,TAN);
+  chain(t1a+8,gy-9); turret(t1a+18); flag(t1a+34,30);
+  px(t1a-5,gy-15,5,9,FRAME); spk(t1a-4,gy-23); spkR(t1a-6,gy-12); skull(t1a+42,gy-15);
+  for(let x=t1a+6;x<t1b-4;x+=11) spk(x,gy-24);
+  tank(t2a,t2b,gy-16,8); camo(t2a+16,gy-19,RUST); camo(t2a+40,gy-20,OLIVE); camo(t2a+56,gy-14,TAN);
+  chain(t2a+8,gy-9); skull(t2a+33,gy-15);
+  px(t1b,gy-12,6,4,FRAME); px(t2b,gy-12,6,4,FRAME);
+  for(let x=t2a+6;x<t2b-4;x+=11) spk(x,gy-24); spkR(t2b,gy-13); spkR(t2b,gy-19);
+  for(let k=0;k<3;k++){const xx=cbL-1+k*3; px(xx,gy-30,2,18,CHRD);px(xx,gy-30,1,18,CHR);px(xx-1,gy-31,3,1,CHR);}
+  smk(cbL,gy-36); smk(cbL+4,gy-35); flm(cbL,gy-30); flm(cbL+4,gy-30);
+  px(cbL,gy-27,cbR-cbL,23,BODY); px(cbL,gy-27,cbR-cbL,2,BODYH); px(cbR-1,gy-27,1,23,BODYD);
+  px(cbR-8,gy-25,7,8,"#2f4a56"); px(cbR-8,gy-25,7,1,"#5a808e");
+  const bm=cbR; px(bm,gy-14,8,11,RED); px(bm,gy-14,8,1,REDH); px(bm,gy-4,8,1,"#5a0808");
+  for(let t=0;t<4;t++){const x=bm+t*2; px(x,gy-14,2,3,WHT); px(x+1,gy-11,1,1,WHD);}
+  for(let t=0;t<4;t++){const x=bm+t*2; px(x,gy-7,2,3,WHT); px(x,gy-9,1,1,WHD);}
+  px(bm+8,gy-13,3,9,RED); px(bm+8,gy-13,1,3,WHT); px(bm+8,gy-6,1,3,WHT); px(bm+10,gy-10,1,3,WHT);
+  px(cbR-3,gy-24,3,3,"#f0f0e8"); px(cbR-2,gy-23,1,2,"#101010");
+}
+
 function drawTruck(o){
   if(!o.spawned||o.done) return;
-  const sx=o.x-camX, gy=GROUND_Y-camY; if(sx<-70||sx>W+70) return;
+  const sx=o.x-camX, gy=GROUND_Y-camY; if(sx<-120||sx>W+120) return;
   if(o.phase==="boom"){ const a=1-o.boomT/18; g.globalAlpha=a;
     g.fillStyle="#ffd76e"; g.beginPath(); g.arc(sx,gy-14,14*(0.5+o.boomT/12),0,6.29); g.fill();
     g.fillStyle="#e33"; g.beginPath(); g.arc(sx,gy-12,9*(0.5+o.boomT/14),0,6.29); g.fill(); g.globalAlpha=1; return; }
+  if(o.boss){ g.globalAlpha=(o.fade??1); drawWarRig(sx, gy, o);
+    if(o.phase==="battle"){ const p=Math.max(0,1-o.timer/o.dur), w=110;
+      const bc=p>0.5?"#6fd08a":p>0.25?"#e6c36a":"#e04a4a"; px(sx-w/2,gy-42,w,4,"#2a141a"); px(sx-w/2,gy-42,w*p,4,bc); }
+    g.fillStyle="#ffd24d"; g.font="7px 'Courier New',monospace"; g.textAlign="center"; g.fillText("BOSS #"+o.n, sx, gy-45); g.textAlign="left";
+    g.globalAlpha=1; return; }
   const col=heroById[o.hero]?.color||"#c92b2b", colD=darken(col,0.6), colL=lighten(col,0.3);
   const bw=o.bw, bH=o.ch, cargoH=o.cargoH, bb=gy-3, bt=bb-bH;   // chassis (sized by comment volume)
   const unresolved=(o.phase==="pass"||o.phase==="out");
