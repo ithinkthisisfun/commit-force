@@ -211,7 +211,13 @@ function shareParams() {
 }
 // keep the address-bar URL in sync with the selections, so the PHONE's own Share
 // button (and bookmark / copy-link / refresh) carry them — not just our in-app icon
-function syncUrl() { const qs = shareParams().toString(); history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "")); }
+const ogUrl = document.querySelector('meta[property="og:url"]');
+function syncUrl() {
+  const qs = shareParams().toString(), path = location.pathname + (qs ? "?" + qs : "");
+  history.replaceState(null, "", path);
+  // iOS Safari's Share sheet reads og:url, not the address bar — keep it current too
+  if (ogUrl) ogUrl.setAttribute("content", location.origin + path);
+}
 $limit.addEventListener("input", syncUrl);
 $commits.addEventListener("input", syncUrl);
 branchSel.addEventListener("change", syncUrl);

@@ -132,7 +132,7 @@ export function assembleLevel(repo, { issues = [], prs = [], commits = [], relea
   let boss = null;
   for (const o of obstacles) if (o.state === "closed" && (!boss || o.comments > boss.comments)) boss = o;
   if (!boss) for (const o of obstacles) if (!boss || o.comments > boss.comments) boss = o;
-  if (boss && boss.comments >= 3) boss.boss = true;
+  if (boss && boss.comments >= 2) boss.boss = true;
 
   const closedN = obstacles.filter(o => o.state === "closed").length;
   const openN = obstacles.filter(o => o.state === "open").length;
