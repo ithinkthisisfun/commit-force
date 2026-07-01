@@ -110,8 +110,12 @@ const fmtStars = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" :
 const addSug = (r, label) => { const o = document.createElement("option"); o.value = r; o.textContent = label || r; suggest.appendChild(o); };
 ["cli/cli", "sveltejs/svelte", "vitejs/vite"].forEach(r => addSug(r));
 suggest.onchange = () => { const v = suggest.value; suggest.selectedIndex = 0; if (v) { repo.value = v; doCheck(); } };
-getSuggestedRepos().then(list => { if (!list.length) return; suggest.length = 1;   // drop seeds, keep placeholder
-  for (const it of list) addSug(it.repo, it.repo + "   ★" + fmtStars(it.stars)); }).catch(() => {});
+const fillSuggest = list => { if (!list || !list.length) return; suggest.length = 1;   // drop seeds, keep placeholder
+  for (const it of list) addSug(it.repo, it.repo + "   ★" + fmtStars(it.stars)); };
+// cache the list for the session so it's fetched once, not on every load (saves a Search call)
+const cachedSuggest = (() => { try { return JSON.parse(sessionStorage.getItem("cf_suggest")); } catch { return null; } })();
+if (cachedSuggest && cachedSuggest.length) fillSuggest(cachedSuggest);
+else getSuggestedRepos().then(list => { if (!list.length) return; try { sessionStorage.setItem("cf_suggest", JSON.stringify(list)); } catch {} fillSuggest(list); }).catch(() => {});
 repo.value = sessionStorage.getItem("gitboy_lastrepo") || "";
 // shareable link: ?repo=owner/name&branch=main[&issues=N&commits=N] — prefill + auto-play
 let autoShare = null;
