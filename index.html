@@ -106,6 +106,8 @@ let autoShare = null;
     if (q.get("issues")) $("limit").value = q.get("issues");
     if (q.get("commits") != null) $("commits").value = q.get("commits");
     autoShare = { branch: (q.get("branch") || "").trim() }; } }
+// pull a branch out of a pasted /tree/<branch> URL (branch names may contain slashes)
+const branchHint = s => { const m = (s || "").match(/github\.com[/:][^/]+\/[^/]+\/tree\/([^?#]+)/i); return m ? decodeURIComponent(m[1].replace(/\/+$/, "")) : ""; };
 repo.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); (repoOk && branchesOk) ? start() : doCheck(); } });
 go.onclick = start;
 
@@ -170,7 +172,11 @@ async function doCheck() {
   branches.forEach(b => { const o = document.createElement("option"); o.value = b; o.textContent = b; branchSel.appendChild(o); });
   branchSel.value = info.defaultBranch; branchSel.disabled = false;
   branchesOk = true; spin.style.display = "none";
-  if (auto && auto.branch && branches.includes(auto.branch)) branchSel.value = auto.branch;   // shared link: preselect its branch
+  // preselect: shared-link branch, else a branch from a pasted /tree/<branch> URL, else default
+  let want = (auto && auto.branch) || "";
+  if (!want) { const h = branchHint(repo.value);
+    if (h) want = branches.includes(h) ? h : (branches.filter(b => h === b || h.startsWith(b + "/")).sort((a, b) => b.length - a.length)[0] || ""); }
+  if (want && branches.includes(want)) branchSel.value = want;
   status.textContent = "repo ✓ · " + branches.length + " branch" + (branches.length !== 1 ? "es" : "");
   setGo();
 
