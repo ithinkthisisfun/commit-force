@@ -545,8 +545,10 @@ function update(){
   SFX.setEngine(paradeOn ? Math.min(0.18,0.06+0.02*Math.min(parade.length,6)) : (idling ? Math.min(0.16,0.05+0.02*idling) : 0));
 
   const focus=(mode==="play")?lead.x:(frontX-40);
-  const tx=Math.max(0,Math.min(WORLD_END-W, focus-W*0.2));   // crew hangs ~30% across -> lots of runway to the right
-  camX+=(tx-camX)*0.14; if(shake>0) shake-=0.5;
+  // once the boss brawl starts, center the whole war rig and hold it there until it's dead (never scrolls off-screen)
+  const framingBoss = BOSS && BOSS.hadRider && !BOSS.done;
+  const tx=Math.max(0,Math.min(WORLD_END-W, framingBoss ? (BOSS.x - W/2) : (focus-W*0.2)));
+  camX+=(tx-camX)*(framingBoss?0.09:0.14); if(shake>0) shake-=0.5;
   for(const k in pressed) delete pressed[k];
 }
 
