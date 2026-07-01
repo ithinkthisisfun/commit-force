@@ -365,7 +365,7 @@ function launchPlane(p){ joinEvent(p.author); planesActive.push({ n:p.n, title:p
 function fireMissile(pl){
   let best=null,bd=1e9; for(const o of OBS){ if(!o.spawned||o.done)continue; const sx=o.x-camX; if(sx<-10||sx>W+10)continue; const d=Math.abs(sx-pl.x); if(d<bd){bd=d;best=o;} }
   const tx=best?(best.x-camX):pl.x+8, ty=GROUND_Y-camY-12, ang=Math.atan2(ty-pl.y,tx-pl.x), sp=3.4;
-  missiles.push({x:pl.x,y:pl.y+3,vx:Math.cos(ang)*sp,vy:Math.max(0.6,Math.sin(ang)*sp),life:75,color:pl.state==="merged"?"#5cd06a":"#ff5a4a"});
+  missiles.push({x:pl.x,y:pl.y+3,vx:Math.cos(ang)*sp,vy:Math.max(0.6,Math.sin(ang)*sp),life:75,color:pl.state==="merged"?"#5cd06a":"#ff5a4a",merged:pl.state==="merged"});
   SFX.missile();
 }
 function explodePlane(pl){
@@ -392,7 +392,8 @@ function updatePlanes(frontX){
   const groundS=GROUND_Y-camY-8;
   for(const m of missiles){ m.x+=m.vx; m.y+=m.vy; m.vy+=0.05; m.life--;
     if(m.y>=groundS){ m.dead=true; shake=Math.max(shake,3);
-      for(let i=0;i<13;i++) fx.push({x:m.x+camX,y:(groundS)+camY,vx:(Math.random()*2-1)*2.5,vy:-Math.random()*2.6,life:18+Math.random()*12,color:Math.random()<0.5?m.color:"#ffd"}); } }
+      for(let i=0;i<13;i++) fx.push({x:m.x+camX,y:(groundS)+camY,vx:(Math.random()*2-1)*2.5,vy:-Math.random()*2.6,life:18+Math.random()*12,color:Math.random()<0.5?m.color:"#ffd"});
+      if(m.merged){ stars.push({x:m.x+camX,y:groundS+camY-4,vx:(Math.random()*2-1)*1.2+0.4,vy:-4.6-Math.random()*1.8,life:54+Math.random()*16,spin:Math.random()*6,color:"#f5d76e",sha:"",bot:false}); SFX.sparkle(); } } }
   planesActive=planesActive.filter(pl=>!pl.dead);
   missiles=missiles.filter(m=>!m.dead && m.life>0);
 }
