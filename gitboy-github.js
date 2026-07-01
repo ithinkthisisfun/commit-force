@@ -71,6 +71,15 @@ export async function getCounts(repoRaw, token = "") {
   try { issues = await searchTotal(repo, "type:issue", token); prs = await searchTotal(repo, "type:pr", token); } catch (e) { if (e instanceof RateLimitError) throw e; }
   return { issues, prs };
 }
+// Suggested repos ~ "trending": the most-starred repos created in the last `days`.
+// (github.com/trending is an HTML page with no CORS — the browser can't read it — so the
+// official Search API is the reliable client-side stand-in.) Fails soft: caller keeps its seeds.
+export async function getSuggestedRepos(token = "", days = 30, count = 12) {
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  const q = encodeURIComponent(`created:>${since} stars:>10`);
+  const j = await gh(`/search/repositories?q=${q}&sort=stars&order=desc&per_page=${count}`, token);
+  return (j.items || []).map(r => ({ repo: r.full_name, stars: r.stargazers_count || 0 }));
+}
 // Combined lookup (existence + branches + counts) — used by the CLI / back-compat.
 export async function getRepoInfo(repoRaw, token = "") {
   const { repo, defaultBranch, isPrivate } = await checkRepo(repoRaw, token);
