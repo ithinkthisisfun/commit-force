@@ -235,7 +235,9 @@ const LV=bgMode?FALLBACK:(STORED||((window.GITBOY_LEVEL&&!window.__noLevel)?wind
   u.searchParams.set("repo", LV.repo);
   if(LV.branch) u.searchParams.set("branch", LV.branch);
   const url=u.toString();
-  btn.onclick=async()=>{ let ok=true; try{ await navigator.clipboard.writeText(url); }catch{ ok=false; }
+  btn.onclick=async()=>{
+    if(navigator.share){ try{ await navigator.share({title:"Commit Force", text:"Commit Force — "+LV.repo+" as a 16-bit gauntlet", url}); return; }catch(e){ if(e&&e.name==="AbortError") return; } }
+    let ok=true; try{ await navigator.clipboard.writeText(url); }catch{ ok=false; }
     toast.textContent = ok ? "link copied — paste it in Discord" : url;
     toast.style.opacity="1"; clearTimeout(btn._t); btn._t=setTimeout(()=>toast.style.opacity="0", ok?1900:6000); };
 })();

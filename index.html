@@ -204,8 +204,13 @@ $("shareTop").onclick = async () => {
   const lim = ($("limit").value || "").trim(), com = ($("commits").value || "").trim();
   if (lim && lim !== "80") u.searchParams.set("issues", lim);
   if (com && com !== "400") u.searchParams.set("commits", com);
-  let ok = true; try { await navigator.clipboard.writeText(u.toString()); } catch { ok = false; }
-  flashTip(ok ? "link copied" : u.toString(), ok ? "#8fd8a0" : "#e6c36a");
+  const url = u.toString();
+  if (navigator.share) {                       // native share sheet (iOS/Android/modern desktop)
+    try { await navigator.share({ title: "Commit Force", text: `Commit Force — ${r} as a 16-bit gauntlet`, url }); return; }
+    catch (e) { if (e && e.name === "AbortError") return; }   // user cancelled; otherwise fall back to copy
+  }
+  let ok = true; try { await navigator.clipboard.writeText(url); } catch { ok = false; }
+  flashTip(ok ? "link copied" : url, ok ? "#8fd8a0" : "#e6c36a");
 };
 // typing a new repo invalidates the current lookup (cheap, no network) — re-run with ›
 repo.addEventListener("input", () => {
