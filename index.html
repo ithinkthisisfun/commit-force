@@ -44,6 +44,12 @@
   .repobar input{ flex:1; width:auto; }
   #check{ margin:0; flex:none; width:48px; padding:0; font-size:22px; line-height:1; letter-spacing:0; background:#3a1620; box-shadow:0 4px 0 #1a0c10; }
   #check:hover{ background:var(--red); } #check:active{ transform:translateY(3px); box-shadow:0 1px 0 #1a0c10; }
+  #shareTop{ position:absolute; top:12px; right:12px; z-index:3; width:32px; height:32px; margin:0; padding:0;
+    font-size:17px; line-height:1; letter-spacing:0; background:#2a1015; color:#e7b7bd; border:2px solid #5a2530; box-shadow:none; }
+  #shareTop:hover{ background:var(--red); color:#fff; border-color:var(--red2); }
+  #shareTip{ position:absolute; top:48px; right:12px; z-index:3; font-size:10px; letter-spacing:1px;
+    background:rgba(10,6,8,0.92); border:1px solid #3a6a45; padding:3px 7px; opacity:0; transition:opacity .2s;
+    pointer-events:none; white-space:nowrap; max-width:calc(100% - 24px); overflow:hidden; text-overflow:ellipsis; }
   #bar{ margin-top:22px; height:16px; background:#0c0709; border:2px solid #3a1620; display:none; }
   #fill{ height:100%; width:0%; background:linear-gradient(90deg,var(--red),var(--red2)); transition:width .18s; }
   #statusrow{ margin-top:8px; min-height:16px; display:flex; align-items:center; gap:8px; }
@@ -64,6 +70,8 @@
 <iframe id="bg" src="play.html?bg=1" tabindex="-1" scrolling="no" aria-hidden="true"></iframe>
 <div id="veil"></div>
 <div id="card">
+  <button id="shareTop" type="button" title="copy a share link with these options" aria-label="share these options">⤴</button>
+  <div id="shareTip"></div>
   <h1>COMMIT FORCE</h1>
   <p class="sub">RUN A REPO'S ISSUE LOG AS A 16-BIT GAUNTLET</p>
 
@@ -189,6 +197,22 @@ async function doCheck() {
   }).catch(() => {});
 }
 check.onclick = doCheck;
+// top-right share icon: copy a link that reopens the loader with these options
+const shareTip = $("shareTip");
+function flashTip(msg, col) { shareTip.textContent = msg; shareTip.style.color = col;
+  shareTip.style.opacity = "1"; clearTimeout(shareTip._t); shareTip._t = setTimeout(() => shareTip.style.opacity = "0", msg.length > 30 ? 6000 : 1600); }
+$("shareTop").onclick = async () => {
+  const r = normalizeRepo(repo.value.trim());
+  if (!r.includes("/")) { flashTip("enter a repo first", "#e6c36a"); return; }
+  const u = new URL(location.href); u.search = "";
+  u.searchParams.set("repo", r);
+  if (branchSel.value && !branchSel.disabled) u.searchParams.set("branch", branchSel.value);
+  const lim = ($("limit").value || "").trim(), com = ($("commits").value || "").trim();
+  if (lim && lim !== "80") u.searchParams.set("issues", lim);
+  if (com && com !== "400") u.searchParams.set("commits", com);
+  let ok = true; try { await navigator.clipboard.writeText(u.toString()); } catch { ok = false; }
+  flashTip(ok ? "link copied" : u.toString(), ok ? "#8fd8a0" : "#e6c36a");
+};
 // typing a new repo invalidates the current lookup (cheap, no network) — re-run with ›
 repo.addEventListener("input", () => {
   repoOk = branchesOk = false; setGo();
