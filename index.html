@@ -4,6 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Commit Force</title>
+<meta name="description" content="Point it at any GitHub repo and watch its issues, PRs & commits play out as a 16-bit gauntlet.">
+<meta name="theme-color" content="#c92b2b">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="I Think This Is Fun">
+<meta property="og:title" content="Commit Force">
+<meta property="og:description" content="Point it at any GitHub repo and watch its issues, PRs & commits play out as a 16-bit gauntlet.">
+<meta property="og:url" content="https://ithinkthisisfun.com/games/commit-force/">
+<meta property="og:image" content="https://ithinkthisisfun.com/games/commit-force/og.png?v=2">
+<meta property="og:image:width" content="640">
+<meta property="og:image:height" content="364">
+<meta property="og:image:alt" content="COMMIT FORCE — any GitHub repo, run as a 16-bit gauntlet">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Commit Force">
+<meta name="twitter:description" content="Point it at any GitHub repo and watch its issues, PRs & commits play out as a 16-bit gauntlet.">
+<meta name="twitter:image" content="https://ithinkthisisfun.com/games/commit-force/og.png?v=2">
 <style>
   :root{ --red:#c92b2b; --red2:#e04a4a; --ink:#e7b7bd; --panel:#1a0e12; }
   *{ box-sizing:border-box; }
@@ -25,6 +40,10 @@
   .ex{ color:#c7b3b8; cursor:pointer; text-decoration:underline; }
   button{ margin-top:20px; width:100%; padding:13px; background:var(--red); color:#fff; border:none; font-family:inherit; font-size:17px; letter-spacing:3px; cursor:pointer; text-shadow:1px 1px 0 #000; box-shadow:0 4px 0 #7a1a1a; }
   button:hover{ background:var(--red2); } button:active{ transform:translateY(3px); box-shadow:0 1px 0 #7a1a1a; } button:disabled{ background:#4a2530; box-shadow:0 4px 0 #2a1015; cursor:default; }
+  .repobar{ display:flex; gap:8px; align-items:stretch; }
+  .repobar input{ flex:1; width:auto; }
+  #check{ margin:0; flex:none; width:48px; padding:0; font-size:22px; line-height:1; letter-spacing:0; background:#3a1620; box-shadow:0 4px 0 #1a0c10; }
+  #check:hover{ background:var(--red); } #check:active{ transform:translateY(3px); box-shadow:0 1px 0 #1a0c10; }
   #bar{ margin-top:22px; height:16px; background:#0c0709; border:2px solid #3a1620; display:none; }
   #fill{ height:100%; width:0%; background:linear-gradient(90deg,var(--red),var(--red2)); transition:width .18s; }
   #statusrow{ margin-top:8px; min-height:16px; display:flex; align-items:center; gap:8px; }
@@ -49,7 +68,10 @@
   <p class="sub">RUN A REPO'S ISSUE LOG AS A 16-BIT GAUNTLET</p>
 
   <label>GITHUB REPO <span class="help" data-help="Any public GitHub repo, as owner/name (a full https URL works too). Your browser reads it straight from GitHub — nothing is sent to this site's server.">?</span></label>
-  <input id="repo" placeholder="owner/name" autofocus spellcheck="false" autocomplete="off">
+  <div class="repobar">
+    <input id="repo" placeholder="owner/name" autofocus spellcheck="false" autocomplete="off">
+    <button id="check" type="button" title="look up this repo" aria-label="look up this repo">›</button>
+  </div>
   <small>e.g. <span class="ex" data-r="cli/cli">cli/cli</span> ·
     <span class="ex" data-r="sveltejs/svelte">sveltejs/svelte</span> ·
     <span class="ex" data-r="vitejs/vite">vitejs/vite</span></small>
@@ -67,17 +89,24 @@
   <div id="statusrow"><span id="status"></span><span id="spin"></span></div>
   <div id="err"></div>
   <div id="warn"></div>
-  <div class="note">No sign-in, no token — your browser reads GitHub directly and nothing touches this site's server. GitHub allows ~60 requests/hour per IP (a few builds); if you hit that, wait a few minutes. Source is <a href="https://github.com/ithinkthisisfun/commit-force" target="_blank" rel="noreferrer">public on GitHub</a>.</div>
+  <div class="note">GitHub allows ~60 requests/hour per IP (a few builds); if you hit that, wait a few minutes. Source is <a href="https://github.com/ithinkthisisfun/commit-force" target="_blank" rel="noreferrer">public on GitHub</a>.</div>
 </div>
 
 <script type="module">
 import { buildLevelFromGitHub, checkRepo, getBranches, getCounts, RateLimitError } from "./gitboy-github.js";
 import { normalizeRepo } from "./gitboy-core.js";
 const $ = id => document.getElementById(id);
-const repo=$("repo"), go=$("go"), bar=$("bar"), fill=$("fill"), status=$("status"), err=$("err");
-document.querySelectorAll(".ex").forEach(e => e.onclick = () => { repo.value = e.dataset.r; repo.focus(); });
+const repo=$("repo"), go=$("go"), bar=$("bar"), fill=$("fill"), status=$("status"), err=$("err"), check=$("check");
+document.querySelectorAll(".ex").forEach(e => e.onclick = () => { repo.value = e.dataset.r; doCheck(); });
 repo.value = sessionStorage.getItem("gitboy_lastrepo") || "";
-repo.addEventListener("keydown", e => { if (e.key === "Enter") start(); });
+// shareable link: ?repo=owner/name&branch=main[&issues=N&commits=N] — prefill + auto-play
+let autoShare = null;
+{ const q = new URLSearchParams(location.search); const qr = (q.get("repo") || "").trim();
+  if (qr) { repo.value = qr;
+    if (q.get("issues")) $("limit").value = q.get("issues");
+    if (q.get("commits") != null) $("commits").value = q.get("commits");
+    autoShare = { branch: (q.get("branch") || "").trim() }; } }
+repo.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); (repoOk && branchesOk) ? start() : doCheck(); } });
 go.onclick = start;
 
 // help tooltips
@@ -96,19 +125,21 @@ const truckhint = $("truckhint"), limitEl = $("limit");
 const updHint = () => { truckhint.textContent = "≈ " + ((+limitEl.value || 0) * 2) + " trucks"; };
 limitEl.addEventListener("input", updHint); updHint();
 
-// two-step recognizer: (1) verify the repo exists (fast) -> (2) load branches with a
-// spinner + "loading branches…" and default-select the repo's default branch -> enable GO.
-// Issue/PR counts load in the background afterward and never gate GO.
+// two-step lookup, kicked off ON DEMAND (the › button / Enter / a demo link) — NOT on every
+// keypress. (1) verify the repo exists (fast) -> (2) load branches with a spinner +
+// "loading branches…", default-select the default branch -> enable GO. Issue/PR counts load
+// in the background afterward and never gate GO. Rate-limit hits are reported under GO.
 const branchSel = $("branch"), spin = $("spin");
 let repoOk = false, branchesOk = false, checkSeq = 0;
 const setGo = () => { go.disabled = !(repoOk && branchesOk); };
 go.disabled = true;
-const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
-const recheck = debounce(async () => {
+const rateMsg = e => `⏳ GitHub rate limit hit (60/hr) — try again in ~${Math.max(1, Math.round((e.resetMs - Date.now()) / 60000))} min`;
+async function doCheck() {
+  const auto = autoShare; autoShare = null;   // one-shot: a shared ?repo= link auto-plays on success
   const norm = normalizeRepo(repo.value.trim());
   repoOk = branchesOk = false; setGo();
   branchSel.innerHTML = ""; branchSel.disabled = true; err.textContent = ""; $("warn").textContent = "";
-  if (!norm.includes("/") || norm.split("/").some(p => !p)) { spin.style.display = "none"; status.textContent = ""; return; }
+  if (!norm.includes("/") || norm.split("/").some(p => !p)) { spin.style.display = "none"; status.textContent = repo.value.trim() ? "enter a repo as owner/name" : ""; return; }
   const my = ++checkSeq;
 
   // step 1 — does the repo exist? (one fast request)
@@ -118,7 +149,8 @@ const recheck = debounce(async () => {
   catch (e) {
     if (my !== checkSeq) return;
     spin.style.display = "none"; status.textContent = "";
-    err.textContent = "✕ " + (/404|not found/i.test(e.message || "") ? "repo not found (or private)" : (e.message || "not found"));
+    err.textContent = (e instanceof RateLimitError) ? rateMsg(e)
+      : "✕ " + (/404|not found/i.test(e.message || "") ? "repo not found (or private)" : (e.message || "not found"));
     return;
   }
   if (my !== checkSeq) return;
@@ -131,13 +163,14 @@ const recheck = debounce(async () => {
   catch (e) {
     if (my !== checkSeq) return;
     spin.style.display = "none"; status.textContent = "";
-    err.textContent = "✕ " + (e.message || e);
+    err.textContent = (e instanceof RateLimitError) ? rateMsg(e) : "✕ " + (e.message || e);
     return;
   }
   if (my !== checkSeq) return;
   branches.forEach(b => { const o = document.createElement("option"); o.value = b; o.textContent = b; branchSel.appendChild(o); });
   branchSel.value = info.defaultBranch; branchSel.disabled = false;
   branchesOk = true; spin.style.display = "none";
+  if (auto && auto.branch && branches.includes(auto.branch)) branchSel.value = auto.branch;   // shared link: preselect its branch
   status.textContent = "repo ✓ · " + branches.length + " branch" + (branches.length !== 1 ? "es" : "");
   setGo();
 
@@ -148,9 +181,15 @@ const recheck = debounce(async () => {
       : issues === 0 ? "⚠ no issues → no trucks (planes & stars only)"
       : prs === 0 ? "⚠ no PRs → no planes" : "";
   }).catch(() => {});
-}, 350);
-repo.addEventListener("input", recheck);
-if (repo.value.trim()) recheck();
+}
+check.onclick = doCheck;
+// typing a new repo invalidates the current lookup (cheap, no network) — re-run with ›
+repo.addEventListener("input", () => {
+  repoOk = branchesOk = false; setGo();
+  branchSel.innerHTML = ""; branchSel.disabled = true; err.textContent = ""; $("warn").textContent = "";
+  status.textContent = repo.value.trim() ? "press › to look up" : "";
+});
+if (repo.value.trim()) doCheck();
 
 let busy = false;
 async function start(){
@@ -173,10 +212,7 @@ async function start(){
     }
     setTimeout(() => { location.href = "play.html"; }, level.commitsError ? 2200 : 400);
   } catch (e) {
-    if (e instanceof RateLimitError) {
-      const mins = Math.max(1, Math.round((e.resetMs - Date.now()) / 60000));
-      err.textContent = `✕ GitHub's public rate limit hit (60/hr) — try again in ~${mins} min`;
-    } else { err.textContent = "✕ " + (e.message || e); }
+    err.textContent = (e instanceof RateLimitError) ? rateMsg(e) : "✕ " + (e.message || e);
     reset();
   }
 }

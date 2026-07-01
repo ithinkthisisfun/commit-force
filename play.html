@@ -13,10 +13,17 @@
   #hint { position:absolute; left:50%; bottom:8px; transform:translateX(-50%); font-size:12px;
     color:#7a3038; letter-spacing:1px; white-space:nowrap; text-shadow:0 1px 0 #000; user-select:none; }
   #hint b { color:#e55; }
+  #share { position:absolute; top:8px; right:8px; z-index:5; font-family:inherit; font-size:11px; letter-spacing:1px;
+    padding:6px 11px; background:#2a1015; color:#e7b7bd; border:2px solid #5a2530; cursor:pointer; text-shadow:0 1px 0 #000; }
+  #share:hover { background:#c92b2b; color:#fff; border-color:#e04a4a; }
+  #toast { position:absolute; top:40px; right:8px; z-index:5; font-size:10px; letter-spacing:1px; color:#8fd8a0;
+    background:rgba(10,6,8,0.88); padding:4px 8px; opacity:0; transition:opacity .25s; pointer-events:none; white-space:nowrap; }
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="c" width="416" height="234"></canvas></div>
+<button id="share" title="copy a link that plays this repo">⤴ SHARE</button>
+<div id="toast"></div>
 <div id="hint">
   <b>ENTER</b> take/release control &nbsp;&bull;&nbsp; MOVE <b>&larr; &rarr;</b>/<b>A D</b> &nbsp;&bull;&nbsp;
   JUMP <b>SPACE</b>/<b>W</b> &nbsp;&bull;&nbsp; PUNCH <b>J</b> &nbsp;&bull;&nbsp; KICK <b>K</b> &nbsp;&bull;&nbsp; <b>R</b> replay &nbsp;&bull;&nbsp; <b>M</b> mute
@@ -220,6 +227,19 @@ const FALLBACK={ repo:"demo/commit-force", counts:{total:5,closed:2,open:3,openA
 const bgMode=new URLSearchParams(location.search).has("bg");   // attract loop behind the loader
 const STORED=(()=>{ try{ return JSON.parse(sessionStorage.getItem("GITBOY_LEVEL")); }catch{ return null; } })();
 const LV=bgMode?FALLBACK:(STORED||((window.GITBOY_LEVEL&&!window.__noLevel)?window.GITBOY_LEVEL:FALLBACK));
+
+// SHARE: copy a link back to the loader that reloads this repo (+ branch), with GO ready
+(()=>{ const btn=document.getElementById("share"), toast=document.getElementById("toast"); if(!btn) return;
+  if(bgMode || !LV.repo || LV.repo==="demo/commit-force"){ btn.remove(); return; }
+  const u=new URL(".", location.href);           // -> .../commit-force/  (the loader)
+  u.searchParams.set("repo", LV.repo);
+  if(LV.branch) u.searchParams.set("branch", LV.branch);
+  const url=u.toString();
+  btn.onclick=async()=>{ let ok=true; try{ await navigator.clipboard.writeText(url); }catch{ ok=false; }
+    toast.textContent = ok ? "link copied — paste it in Discord" : url;
+    toast.style.opacity="1"; clearTimeout(btn._t); btn._t=setTimeout(()=>toast.style.opacity="0", ok?1900:6000); };
+})();
+
 LV.heroes.forEach(h=>h.pal=palette(h.color));
 const heroById=Object.fromEntries(LV.heroes.map(h=>[h.id,h]));
 

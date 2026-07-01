@@ -137,6 +137,7 @@ export async function buildLevelFromGitHub(repoRaw, { token = "", limit = 100, c
 
   onProgress(92, "building level…");
   const level = assembleLevel(repo, { issues, prs, commits: commitList, releases, realOpen, realClosed });
+  level.branch = branch || "";           // remembered so the game can build a shareable link
   if (commitError) level.commitsError = commitError;
   onProgress(100, "done");
   return level;
