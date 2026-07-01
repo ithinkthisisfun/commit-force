@@ -249,7 +249,7 @@ const heroById=Object.fromEntries(LV.heroes.map(h=>[h.id,h]));
 const GROUND_Y=1000, camY=GROUND_Y-(H-52), START_X=150;
 const RUNSPEED=3.6, DURATION_SEC=58, TRACK_LEN=RUNSPEED*60*DURATION_SEC;
 const MINGAP=22, CLUSTER_GAP=24, MAXTRUCKS=10;
-const TRUCK_LEAD=Math.round(W*0.5+60);   // world-px head start: dispatch this far ahead of a truck's due point so it slides in from off-screen instead of popping in
+const TRUCK_LEAD=Math.round(W*1.0+60);   // world-px head start: dispatch this far ahead of a truck's due point so it slides in from off-screen (now a longer glide to the ~40% engage point)
 const TRUCK_ROOF=GROUND_Y-22, TS=16;
 
 const OBS=LV.obstacles.map(o=>({ ...o }));
@@ -468,7 +468,7 @@ function update(){
     o.fade=Math.min(1,(o.fade||0)+0.08);
     o.x+=o.vx; o.wheel+=Math.abs(o.vx)*0.18;
     if(o.phase==="approach"){
-      if(o.x-camX<=W*0.70){                          // ~25% across -> the crew jumps on
+      if(o.x-camX<=W*0.40){                          // truck reaches ~40% (just ahead of the crew) -> jump on
         let crew;
         if(o.cap>1) crew=actors.filter(a=>!a.riding&&!a.controlled).slice(0,o.cap);   // boss: dogpile
         else { const r=pickRider(o); crew=r?[r]:[]; }
@@ -534,7 +534,7 @@ function update(){
   SFX.setEngine(paradeOn ? Math.min(0.18,0.06+0.02*Math.min(parade.length,6)) : (idling ? Math.min(0.16,0.05+0.02*idling) : 0));
 
   const focus=(mode==="play")?lead.x:(frontX-40);
-  const tx=Math.max(0,Math.min(WORLD_END-W, focus-W*0.5));   // "now" sits at screen center
+  const tx=Math.max(0,Math.min(WORLD_END-W, focus-W*0.2));   // crew hangs ~30% across -> lots of runway to the right
   camX+=(tx-camX)*0.14; if(shake>0) shake-=0.5;
   for(const k in pressed) delete pressed[k];
 }
