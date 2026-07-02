@@ -96,16 +96,18 @@ function Stop-Http($err, $ctx) {
   }
 }
 
+# Follows the Link rel="next" cursor rather than ?page=N (GitHub 422s on page numbers for large datasets).
+# Uses Invoke-WebRequest (not -RestMethod) so we can read the Link response header.
 function Get-Paged([string]$path, [string]$stopField, [string]$label) {
   $out = New-Object System.Collections.ArrayList
-  $page = 1
+  $sep = if ($path -match '\?') { '&' } else { '?' }
+  $url = "$api$path${sep}per_page=100"
   if ($label) { Write-Host -NoNewline "  $label " }
-  while ($true) {
-    $sep = if ($path -match '\?') { '&' } else { '?' }
-    try { $resp = Invoke-RestMethod -Uri "$api$path${sep}per_page=100&page=$page" -Headers $headers -Method Get }
+  while ($url) {
+    try { $resp = Invoke-WebRequest -Uri $url -Headers $headers -Method Get -UseBasicParsing }
     catch { if ($label) { Write-Host "" }; Stop-Http $_ "fetching $($label.Trim())" }
-    # Invoke-RestMethod emits a JSON array as ONE non-enumerated item, so @(...) would wrap it. Coerce:
-    $arr = if ($resp -is [System.Array]) { $resp } elseif ($null -ne $resp) { @($resp) } else { @() }
+    $data = $resp.Content | ConvertFrom-Json
+    $arr = if ($data -is [System.Array]) { $data } elseif ($null -ne $data) { @($data) } else { @() }
     if ($arr.Count -eq 0) { break }
     [void]$out.AddRange($arr)
     if ($label) { Write-Host -NoNewline "." }
@@ -113,8 +115,9 @@ function Get-Paged([string]$path, [string]$stopField, [string]$label) {
       $oldest = $arr[-1].$stopField
       if ($oldest -and ([datetime]$oldest -lt $sinceDt)) { break }
     }
-    if ($arr.Count -lt 100) { break }
-    $page++
+    $link = $resp.Headers["Link"]; if ($link -is [System.Array]) { $link = $link -join ',' }   # follow rel="next"
+    $m = [regex]::Match([string]$link, '<([^>]+)>;\s*rel="next"')
+    $url = if ($m.Success) { $m.Groups[1].Value } else { $null }
   }
   if ($label) { Write-Host " $($out.Count)" }
   return $out

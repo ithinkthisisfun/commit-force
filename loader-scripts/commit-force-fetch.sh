@@ -76,28 +76,30 @@ fail_http() {
   exit 1
 }
 
-# Fetch every page of a list endpoint -> one JSON array on STDOUT (progress goes to stderr). If $2 is a
+# Fetch every page of a list endpoint -> one JSON array on STDOUT (progress goes to stderr). Follows the
+# Link rel="next" cursor rather than ?page=N (GitHub 422s on page numbers for large datasets). If $2 is a
 # field name, stop paging once a page's oldest item (last, since we sort desc) is before SINCE.
 fetch_pages() {
-  local path="$1" stopfield="${2:-}" label="${3:-}" page=1 sep pages="" resp code pg n oldest total=0 lbl
+  local path="$1" stopfield="${2:-}" label="${3:-}" url sep code n oldest next total=0 lbl pages=""
   lbl="$(printf '%s' "${label:-$path}" | sed 's/[[:space:]]*$//')"   # trimmed, for error messages
   [ -n "$label" ] && printf '  %s ' "$label" >&2
-  while : ; do
-    case "$path" in *\?*) sep="&";; *) sep="?";; esac
-    resp="$(curl "${HDR[@]}" -w $'\n%{http_code}' "$API$path${sep}per_page=100&page=$page")" \
+  case "$path" in *\?*) sep="&";; *) sep="?";; esac
+  url="$API$path${sep}per_page=100"
+  while [ -n "$url" ]; do
+    # body -> ._cf_page.json, headers -> ._cf_hdr (relative paths; native Windows jq/grep read them fine)
+    code="$(curl "${HDR[@]}" -D ._cf_hdr -o ._cf_page.json -w '%{http_code}' "$url")" \
       || { [ -n "$label" ] && echo "" >&2; echo "network error while fetching $lbl" >&2; exit 1; }
-    code="${resp##*$'\n'}"; pg="${resp%$'\n'*}"
     if [ "$code" != "200" ]; then [ -n "$label" ] && echo "" >&2; fail_http "$code" "fetching $lbl"; fi
-    n="$(printf '%s' "$pg" | jq 'length')"
+    n="$(jq 'length' ._cf_page.json)"
     [ "$n" -eq 0 ] && break
-    pages="${pages}${pg}"$'\n'                 # accumulate raw arrays (pipe-only; native Windows jq can't read <() or temp fd paths)
+    pages="${pages}$(cat ._cf_page.json)"$'\n'
     total=$((total+n)); [ -n "$label" ] && printf '.' >&2
     if [ -n "$stopfield" ]; then
-      oldest="$(printf '%s' "$pg" | jq -r ".[-1].$stopfield // empty")"
+      oldest="$(jq -r ".[-1].$stopfield // empty" ._cf_page.json)"
       [ -n "$oldest" ] && [ "$oldest" \< "$SINCE" ] && break
     fi
-    [ "$n" -lt 100 ] && break
-    page=$((page+1))
+    next="$(tr -d '\r' < ._cf_hdr | grep -i '^link:' | sed -n 's/.*<\([^>]*\)>; *rel="next".*/\1/p' | head -1)"   # cursor for the next page
+    url="$next"
   done
   [ -n "$label" ] && printf ' %s\n' "$total" >&2
   printf '%s' "$pages" | jq -s 'add // []'
@@ -120,7 +122,7 @@ fi
 # Write each normalized array to a temp file in the CWD (relative names -- native Windows jq can't read
 # /tmp or msys paths), then --slurpfile them. Files (not --argjson) so we never hit the argv length cap.
 TI="._cf_issues.json"; TP="._cf_prs.json"; TC="._cf_commits.json"; TR="._cf_releases.json"
-trap 'rm -f "$TI" "$TP" "$TC" "$TR"' EXIT
+trap 'rm -f "$TI" "$TP" "$TC" "$TR" ._cf_hdr ._cf_page.json' EXIT
 
 fetch_pages "/repos/$REPO/issues?state=all&sort=updated&direction=desc&since=$SINCE" updated_at "issues " \
   | jq --arg s "$SINCE" --arg u "$UNTIL" '[ .[]

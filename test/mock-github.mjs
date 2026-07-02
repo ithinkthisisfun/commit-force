@@ -61,11 +61,20 @@ const byUpdatedDesc = (a, b) => ms(b.updated_at) - ms(a.updated_at);
 
 function paginate(items, u) {
   const per = Math.min(100, Math.max(1, +(u.searchParams.get("per_page") || 30)));
+  const base = `${u.protocol}//${u.host}${u.pathname}`;
+  // Link URLs preserve ALL original query params (since/until/sha/state/...), like real GitHub -- only
+  // the paging cursor changes -- so follow-up pages stay windowed.
+  const linkFor = over => { const q = new URLSearchParams(u.searchParams); q.set("per_page", String(per)); for (const k in over) q.set(k, String(over[k])); return `${base}?${q}`; };
+  if (/^\/repos\/mock\/nopage\//.test(u.pathname)) {          // cursor-only mode (mimics GitHub's large-dataset pagination): no page numbers, just an `after` offset
+    const after = Math.max(0, +(u.searchParams.get("after") || 0));
+    const slice = items.slice(after, after + per);
+    const link = (after + per < items.length) ? `<${linkFor({ after: after + per })}>; rel="next"` : "";
+    return { slice, link };
+  }
   const page = Math.max(1, +(u.searchParams.get("page") || 1));
   const total = items.length, last = Math.max(1, Math.ceil(total / per));
   const slice = items.slice((page - 1) * per, page * per);
-  const base = `${u.protocol}//${u.host}${u.pathname}`;
-  const mk = (p, rel) => `<${base}?per_page=${per}&page=${p}>; rel="${rel}"`;
+  const mk = (p, rel) => `<${linkFor({ page: p })}>; rel="${rel}"`;
   const links = [];
   if (page < last) links.push(mk(page + 1, "next"));
   links.push(mk(last, "last"));
@@ -108,6 +117,8 @@ function handle(req, res, seed) {
   REQUESTS++;                                        // every response carries the (decrementing) rate-limit budget
   if (RATE_LIMIT > 0 && REQUESTS > RATE_LIMIT) return sendRateLimit(res);   // budget exhausted -> real 403 (set MOCK_RATE_LIMIT low to test)
   if (magicFail(res, p, qp)) return;               // magic repos short-circuit with a forced failure
+  if (/^\/repos\/mock\/nopage\//.test(p) && qp.has("page"))   // mock/nopage rejects page-based paging exactly like GitHub does on large datasets
+    return sendJSON(res, 422, { message: "Pagination with the page parameter is not supported for large datasets, please use cursor based pagination (after/before)" });
 
   if (p === "/user") return sendJSON(res, 200, { login: "mock-user", id: 1 });   // whoami preflight (the fetch scripts greet you by login)
   if (p === "/rate_limit") { const rem = RATE_LIMIT > 0 ? Math.max(0, RATE_LIMIT - REQUESTS) : 60;   // budget endpoint (friendly "N left, resets HH:MM")

@@ -224,9 +224,9 @@ const SFX = (()=>{
         const b=ctx.createOscillator(); b.type="triangle"; b.frequency.value=130.81*Math.pow(2,(s%12)/12);
         const bg=ctx.createGain(); bg.gain.setValueAtTime(0.0001,tt); bg.gain.exponentialRampToValueAtTime(0.14,tt+0.02); bg.gain.exponentialRampToValueAtTime(0.0001,tt+0.32);
         b.connect(bg); bg.connect(master); b.start(tt); b.stop(tt+0.34); });
-      // resolve up to the tonic and hold it for a measure
+      // end up on the G above the C6 tonic (G6) and hold it for a measure -- open, triumphant
       const tt=t+0.9, ln=1.6;
-      const o=ctx.createOscillator(); o.type="square"; o.frequency.value=1046.5;   // C6 tonic
+      const o=ctx.createOscillator(); o.type="square"; o.frequency.value=1567.98;   // G6 -- the fifth above the C6 tonic
       const g=ctx.createGain(); g.gain.setValueAtTime(0.0001,tt); g.gain.exponentialRampToValueAtTime(0.2,tt+0.03); g.gain.setValueAtTime(0.2,tt+ln*0.6); g.gain.exponentialRampToValueAtTime(0.0001,tt+ln);
       o.connect(g); g.connect(master); o.start(tt); o.stop(tt+ln+0.05);
       const b=ctx.createOscillator(); b.type="triangle"; b.frequency.value=130.81;  // C3 bass
@@ -243,15 +243,15 @@ const lighten=(h,f)=>rh(hx(h).map(v=>v+(255-v)*f));
 const palette=b=>({base:b,dark:darken(b,0.6),light:lighten(b,0.34)});
 
 // ---- level --------------------------------------------------------------
-const FALLBACK={ repo:"demo/commit-force", counts:{total:5,closed:3,open:2,openActive:0,idle:2,commits:16}, span:{days:14},
-  heroes:[{id:"bug",name:"Bug Squad",color:"#c92b2b",count:2,real:true},{id:"feat",name:"Feature Team",color:"#2f7fd8",count:3,real:true}],
-  lead:"feat",
+const FALLBACK={ repo:"demo/commit-force", counts:{total:5,closed:5,open:0,openActive:0,idle:0,commits:16}, span:{days:14},
+  heroes:[{id:"bug",name:"Bug Squad",color:"#c92b2b",count:2,real:true},{id:"feat",name:"Feature Team",color:"#2f7fd8",count:1,real:true},{id:"docs",name:"Docs Crew",color:"#159c9c",count:1,real:true},{id:"task",name:"Chores",color:"#d9a021",count:1,real:true}],
+  lead:"bug",
   obstacles:[
     {n:1,title:"Null crash on startup",state:"closed",kind:"truck",hero:"bug",diff:2,t:0.05,endT:0.14,engage:true,resolves:true},
     {n:2,title:"Add dark mode",state:"closed",kind:"truck",hero:"feat",diff:1,t:0.2,endT:0.28,engage:true,resolves:true,labels:["enhancement"]},
-    {n:3,title:"Old idea nobody did",state:"open",kind:"truck",hero:"feat",diff:1,t:0.4,endT:0.4,engage:false,resolves:false},
+    {n:3,title:"Update README badges",state:"closed",kind:"truck",hero:"docs",diff:1,t:0.4,endT:0.46,engage:true,resolves:true},
     {n:4,title:"CORS misconfig",state:"closed",kind:"truck",hero:"bug",diff:1,t:0.6,endT:0.66,engage:true,resolves:true},
-    {n:5,title:"Realtime sync someday",state:"open",kind:"truck",hero:"feat",diff:3,t:0.82,endT:0.82,engage:false,resolves:false},
+    {n:5,title:"Bump CI to latest Go",state:"closed",kind:"truck",hero:"task",diff:1,t:0.82,endT:0.9,engage:true,resolves:true},
   ],
   stars:[{sha:"a1c0de",t:0.06},{sha:"b2f11e",t:0.14,bot:true},{sha:"c3a220",t:0.22},{sha:"d4b3e1",t:0.3},{sha:"e5c401",t:0.38},{sha:"f6d512",t:0.46,bot:true},{sha:"07e623",t:0.54},{sha:"18f734",t:0.62},{sha:"29a845",t:0.7,bot:true},{sha:"3ab956",t:0.78},{sha:"4bca67",t:0.86},{sha:"5cdb78",t:0.94}],
   planes:[{n:11,title:"Add feature",state:"merged",t:0.25},{n:12,title:"Risky refactor",state:"rejected",t:0.5},{n:13,title:"WIP",state:"open",t:0.75}],
@@ -521,15 +521,17 @@ function drawMissile(m){ const x=Math.round(m.x), y=Math.round(m.y);
   g.globalAlpha=0.7; g.fillStyle="#ffcf7a"; px(x-3,y-1,3,2); px(x-5,y-1,2,1); g.globalAlpha=1;   // flame trail
   g.fillStyle=m.color; px(x-1,y-1,4,2); px(x+3,y-1,1,2); }                                        // body + tip
 
-// ---- balloons ----  a closed "enhancement" issue floats a balloon out of the wreck: same drift+sway
-// as the merged-PR parachute, but buoyant (rises) with a string trailing below. World-space, so it
-// stays anchored to where the truck blew up and scrolls off with the level.
-const isEnhancement=o=>/enhanc/i.test((o.labels||[]).join(" "));         // GitHub "enhancement" label
-const BALLOON_COLORS=["#ff5a7a","#59b6ff","#ffce4a","#68d96e","#c483ff","#ff9f43"];
-function spawnBalloon(o){                                                  // screen-space (player-anchored, like the parachutes) so the scroll doesn't whisk it away
+// ---- balloons ----  a resolved NON-bug issue floats a balloon out of the wreck (bugs get the beetle
+// bubble instead): same drift+sway as the merged-PR parachute but buoyant (rises), with a string
+// trailing below and the issue TYPE printed beside it. Screen-anchored (player-anchored, like the
+// parachutes) so the scroll doesn't whisk it away. Color + label come from the issue's squad.
+const SQUAD_INFO={ bug:{label:"Bug",color:"#ff6a6a"}, feat:{label:"Feature",color:"#6ab0ff"},
+                   docs:{label:"Docs",color:"#4fd0d0"}, task:{label:"Task",color:"#ffcf5a"} };
+function spawnBalloon(o){
+  const info=SQUAD_INFO[o.hero]||SQUAD_INFO.task;
+  let t=(o.title||info.label).trim(); if(t.length>34) t=t.slice(0,33)+"…";   // the ISSUE TITLE rides up with the balloon (truncated so long ones don't run off-screen); color still by squad
   balloons.push({ x:o.x-camX+(Math.random()*2-1)*5, y:o.roof-camY-2, vy:-0.25, sway:Math.random()*6.28,
-    drift:(Math.random()*2-1)*0.35, swayAmp:0.3+Math.random()*0.4, life:900,
-    color:BALLOON_COLORS[(Math.random()*BALLOON_COLORS.length)|0], n:o.n });
+    drift:(Math.random()*2-1)*0.35, swayAmp:0.3+Math.random()*0.4, life:900, color:info.color, type:t });
   SFX.sparkle(); }
 function drawBalloon(b){ const x=Math.round(b.x), y=Math.round(b.y), s=Math.sin(b.sway);
   g.strokeStyle="#caa85a"; g.lineWidth=1; g.beginPath(); g.moveTo(x,y+7);                          // string (~parachute-length) curled by the sway
@@ -537,21 +539,22 @@ function drawBalloon(b){ const x=Math.round(b.x), y=Math.round(b.y), s=Math.sin(
   g.fillStyle=b.color; g.beginPath(); g.ellipse(x,y,6,7,0,0,6.2832); g.fill();                     // round body
   g.fillStyle=darken(b.color,0.7); g.beginPath(); g.moveTo(x-2,y+6); g.lineTo(x+2,y+6); g.lineTo(x,y+9); g.closePath(); g.fill();  // knot
   g.fillStyle="rgba(255,255,255,0.55)"; px(x-3,y-4,2,3);                                            // highlight glint
-  g.fillStyle=b.color; g.font="6px 'Courier New',monospace"; g.textAlign="center"; g.fillText("#"+b.n,x,y-10); g.textAlign="left"; }
+  if(b.type){ g.font="bold 8px 'Courier New',monospace"; g.textAlign="left";                       // issue type beside the balloon; 4-way dark outline = crisp at tiny size (no smudgy shadow)
+    g.fillStyle="#0b0b0b"; for(const d of [[-1,0],[1,0],[0,-1],[0,1]]) g.fillText(b.type,x+9+d[0],y+3+d[1]);
+    g.fillStyle="#fff"; g.fillText(b.type,x+9,y+3); } }
 
-// ---- bug-kill bubble ----  a killed bug (closed "bug" issue) pops a white speech bubble with a
-// crossed-out beetle. It does NOT float: world-anchored, so it scrolls off with the level, and fades
-// out over ~1s. life is in frames (~60 = 1s).
-function spawnBubble(o){ bubbles.push({ x:o.x-camX+(Math.random()*2-1)*3, y:o.roof-camY-18, life:66, max:66 }); }  // screen-space, lifted clear of the explosion
+// ---- bug-kill bubble ----  ONLY a killed bug (resolved "bug" issue) pops a white speech bubble with
+// a crossed-out beetle. Does NOT float: screen-anchored, lifted clear of the blast, fades over ~1s
+// (life in frames, ~60 = 1s). Every other resolved type (feature/task/docs) floats a typed balloon.
+function spawnBubble(o) { bubbles.push({ x:o.x-camX+(Math.random()*2-1)*3, y:o.roof-camY-18, life:66, max:66 }); }
 function rrect(x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y);
   g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
 function drawBubble(bb){ const x=Math.round(bb.x), y=Math.round(bb.y);
   g.globalAlpha=Math.min(1, bb.life/16);                              // hold, then fade in the last ~16 frames
   const w=22,h=16;
-  g.fillStyle="#fff"; g.strokeStyle="#20242a"; g.lineWidth=1;
   g.fillStyle="#fff"; g.beginPath(); g.moveTo(x-3,y+h/2-2); g.lineTo(x+1,y+h/2+5); g.lineTo(x+4,y+h/2-2); g.closePath(); g.fill();  // tail toward the wreck
-  rrect(x-w/2,y-h/2,w,h,4); g.fillStyle="#fff"; g.fill(); g.strokeStyle="#20242a"; g.stroke();
-  g.fillStyle="#111"; g.strokeStyle="#111"; g.lineWidth=1;            // abstract beetle
+  rrect(x-w/2,y-h/2,w,h,4); g.fillStyle="#fff"; g.fill(); g.strokeStyle="#20242a"; g.lineWidth=1; g.stroke();
+  g.fillStyle="#111"; g.strokeStyle="#111"; g.lineWidth=1;            // crossed-out beetle
   g.beginPath(); g.ellipse(x,y+1,3,4,0,0,6.2832); g.fill();           // body
   g.beginPath(); g.ellipse(x,y-3.5,1.7,1.6,0,0,6.2832); g.fill();     // head
   g.beginPath();
@@ -567,7 +570,8 @@ function drawBubble(bb){ const x=Math.round(bb.x), y=Math.round(bb.y);
 function startAttack(a,move){ if(a.act!=="idle")return;
   if(move==="kick"){ a.act="kick"; a.actT=KICK_T; a.vx=a.face*4.2; a.vy=Math.min(a.vy,-1.8); } else { a.act="punch"; a.actT=PUNCH_T; } }
 function doJump(a){ if(a.onGround){ a.vy=-JUMP; a.onGround=false; burst(a.x,a.y-1,a.pal.light,5,1.6); burst(a.x,a.y-2,"#b81f1f",3,1.2); } }
-function pickRider(o){ const own=actors.find(a=>a.id===o.hero&&!a.riding&&!a.controlled&&!a.floating); if(own)return own;
+function pickRider(o){ if(finished) return null;   // vault stage: no more boarding, so nobody gets carried past the safe
+  const own=actors.find(a=>a.id===o.hero&&!a.riding&&!a.controlled&&!a.floating); if(own)return own;
   const free=actors.filter(a=>!a.riding&&!a.controlled&&!a.floating); if(!free.length)return null;
   return free.reduce((p,q)=>Math.abs(q.x-o.x)<Math.abs(p.x-o.x)?q:p,free[0]); }
 
@@ -639,8 +643,7 @@ function update(){
             burst(o.x,GROUND_Y-14,"#ffd76e",52,4); burst(o.x,GROUND_Y-12,"#e33",40,3.6); debris(o.x,GROUND_Y-14,24);
             gib(o.x,o.roof+8,26); addSplat(o.x); crew.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6.5; r.act="idle"; });
             SFX.yeah(); banner="BOSS DEFEATED"; bannerT=200; popCard(o,"RESOLVED"); setTicker(o,"RESOLVED","#8fd8a0"); lastEvent=crew[0].name+" resolved #"+o.n;
-            if(isEnhancement(o)) for(let i=0;i<5;i++) spawnBalloon(o);      // enhancement shipped -> a bunch of balloons
-            if(o.hero==="bug") spawnBubble(o); }                            // bug killed -> "no bug" bubble
+            if(o.hero==="bug") spawnBubble(o); else for(let i=0;i<5;i++) spawnBalloon(o); }   // boss: bug -> beetle bubble, everything else -> a burst of typed balloons
           o.riders=null; }
       } else {                                             // regular truck: a dude works it ~3s then hops off; a CLOSED one booms on its real close date
         const overdue = o.resolves && frontX>=o.closeX;      // past its close date -> expiring: slow down and let the camera carry it left past the midline
@@ -665,8 +668,7 @@ function update(){
             gib(o.x,o.roof+8,10); addSplat(o.x);
             if(o.riders){ o.riders.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6.5; r.act="idle"; }); o.riders=null; }
             if(o.size>=3) SFX.yeah();
-            if(isEnhancement(o)) spawnBalloon(o);                 // closed enhancement -> a balloon floats out of the wreck
-            if(o.hero==="bug") spawnBubble(o);                    // closed bug -> "no bug" speech bubble
+            if(o.hero==="bug") spawnBubble(o); else spawnBalloon(o);   // bug -> beetle bubble; feature/task/docs -> a typed balloon
 
             popCard(o,"RESOLVED"); setTicker(o,"RESOLVED","#8fd8a0"); lastEvent="#"+o.n+" resolved"; }
         }
@@ -705,7 +707,9 @@ function update(){
   if(skipT>0) skipT--; if(timeFlash>0) timeFlash=Math.max(0,timeFlash-0.045);
 
   if(!finished && frontX>FLAG_X){ finished=true; endStage="safe"; shake=6; SFX.stopMusic();
-    safe={ x:Math.max(...actors.map(a=>a.x))+58, t:0, dur:170, exploding:false, boomT:0 }; safeShots=[]; banner="CRACK THE VAULT"; bannerT=170; }
+    safe={ x:Math.max(...actors.map(a=>a.x))+58, t:0, dur:170, exploding:false, boomT:0 }; safeShots=[]; banner="CRACK THE VAULT"; bannerT=170;
+    actors.forEach(a=>{ if(a.riding){ a.riding=null; a.rideSlot=0; a.vy=-3.5; a.act="idle"; } });   // dismount everyone onto their feet so the vault clamp applies (no rider carried past)
+    OBS.forEach(o=>{ o.riders=null; }); }
   if(finished){
     if(endStage==="safe") updateSafe();
     else { finishT++; updateFireworks(); if(finishT>=300 && !paradeOn) startParade(); if(paradeOn) updateParade(); }
@@ -778,6 +782,7 @@ function updateActor(a,frontX){
   if(a.y>=gy){ if(a.vy>4)a.squash=1; a.y=gy; a.vy=0; a.onGround=true; } else a.onGround=false;
   if(a.controlled||a.prefersHigh) collidePlatforms(a);   // only the high-road crew (and you) mount platforms
   if(a.x<8) a.x=8;
+  if(finished && safe && a.x>safe.x-24){ a.x=safe.x-24; if(a.vx>0) a.vx=0; }   // vault stage: gather at the vault face, never overrun the safe (momentum after a late boss flee)
   if(a.onGround&&Math.abs(a.vx)>0.3) a.animT+=Math.abs(a.vx)*0.12; else a.animT=0;
   if(a.squash>0) a.squash-=0.12;
 }

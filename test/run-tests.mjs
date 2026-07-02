@@ -51,6 +51,13 @@ try {
   try { await buildLevelFromGitHub("mock/rate-limit", { branch: "main", token: "t", ...win(365) }); }
   catch (e) { rl = e instanceof RateLimitError; }
   ok("mock/rate-limit -> RateLimitError mid-fetch", rl);
+
+  // --- cursor pagination: GitHub 422s on ?page=N for large datasets; we must follow the rel="next" cursor ---
+  let cursorErr = null, big = null;
+  try { big = await buildLevelFromGitHub("mock/nopage", { branch: "main", token: "t", ...win(90) }); }
+  catch (e) { cursorErr = e; }
+  ok("mock/nopage: cursor-only paging builds (no ?page=N 422)", !!big && !cursorErr, cursorErr ? cursorErr.message : "");
+  ok("mock/nopage: followed the cursor across multiple pages", !!big && big.counts.total > 150, big ? `total=${big.counts.total}` : "n/a");
 } catch (e) {
   fail++; console.log("  ✗ threw: " + (e && e.stack || e));
 }

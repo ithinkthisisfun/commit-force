@@ -12,12 +12,13 @@ function headers(token) {
   if (token) h.Authorization = "Bearer " + token;
   return h;
 }
-async function gh(path, token) {
-  const res = await fetch(API + path, { headers: headers(token) });
-  if (res.status === 403 || res.status === 429) {
-    const rem = res.headers.get("x-ratelimit-remaining");
-    if (rem === "0") { const reset = +res.headers.get("x-ratelimit-reset") * 1000; throw new RateLimitError(reset); }
-    throw new Error("GitHub returned 403 (forbidden) — likely the public rate limit; try again shortly.");
+async function ghFetch(url, token) {                        // shared fetch + error handling; returns the Response (so callers can read the Link header)
+  const res = await fetch(url, { headers: headers(token) });
+  if (res.status === 403 || res.status === 429) {            // rate limited -> throw with the wait time so the UI can say "try again in ~N min"
+    const retry = res.headers.get("retry-after");            // secondary/abuse limit: seconds to wait
+    if (retry) throw new RateLimitError(Date.now() + (+retry) * 1000);
+    if (res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(+res.headers.get("x-ratelimit-reset") * 1000);   // primary 60/hr limit
+    throw new Error("GitHub returned 403 (forbidden) — likely a rate limit; try again shortly.");
   }
   if (res.status === 404) throw new Error("Repo not found (or private).");
   if (!res.ok) {                                             // surface GitHub's own reason (422 = "Validation Failed", etc.)
@@ -28,37 +29,42 @@ async function gh(path, token) {
     } catch {}
     throw new Error(msg);
   }
-  return res.json();
+  return res;
 }
+async function gh(path, token) { return (await ghFetch(API + path, token)).json(); }   // path -> parsed JSON body
+// GitHub deprecated ?page=N for large result sets (422: "please use cursor based pagination"); the
+// cursor is baked into the Link rel="next" URL, so we just follow that instead of building page numbers.
+function nextLink(res) { const m = (res.headers.get("Link") || "").match(/<([^>]+)>;\s*rel="next"/); return m ? m[1] : null; }
 export class RateLimitError extends Error {
   constructor(resetMs) { super("GitHub's public rate limit reached — try again shortly"); this.resetMs = resetMs; }
 }
 
-// page through a list endpoint up to `max` items
+// page through a list endpoint up to `max` items, following the Link rel="next" cursor
 async function paged(pathBase, token, max, onPage) {
-  const per = 100, out = [];
-  for (let page = 1; out.length < max; page++) {
-    const sep = pathBase.includes("?") ? "&" : "?";
-    const arr = await gh(`${pathBase}${sep}per_page=${per}&page=${page}`, token);
+  const per = 100, out = [], sep = pathBase.includes("?") ? "&" : "?";
+  let url = `${API}${pathBase}${sep}per_page=${per}`;
+  while (url && out.length < max) {
+    const res = await ghFetch(url, token); const arr = await res.json();
     if (!Array.isArray(arr) || arr.length === 0) break;
     out.push(...arr);
     if (onPage) onPage(out.length);
-    if (arr.length < per) break;
+    url = nextLink(res);
   }
   return out.slice(0, max);
 }
-// page a newest-first list, keeping items whose sort date is within [start, end]: skip anything
-// newer than `end`, stop once we page before `start`. `dateOf` picks that sort field (updated_at).
+// page a newest-first list, keeping items whose sort date is within [start, end]: skip anything newer
+// than `end`, stop once we page before `start`. Follows the rel="next" cursor. `dateOf` = updated_at.
 async function pagedWindow(pathBase, token, max, start, end, dateOf, onPage) {
-  const per = 100, out = [];
-  for (let page = 1; out.length < max; page++) {
-    const sep = pathBase.includes("?") ? "&" : "?";
-    const arr = await gh(`${pathBase}${sep}per_page=${per}&page=${page}`, token);
+  const per = 100, out = [], sep = pathBase.includes("?") ? "&" : "?";
+  let url = `${API}${pathBase}${sep}per_page=${per}`;
+  while (url && out.length < max) {
+    const res = await ghFetch(url, token); const arr = await res.json();
     if (!Array.isArray(arr) || arr.length === 0) break;
     let hitOld = false;
     for (const it of arr) { const d = dateOf(it); if (d < start) { hitOld = true; break; } if (d > end) continue; out.push(it); if (out.length >= max) break; }
     if (onPage) onPage(out.length);
-    if (hitOld || arr.length < per || out.length >= max) break;
+    if (hitOld || out.length >= max) break;
+    url = nextLink(res);
   }
   return out;
 }
@@ -94,6 +100,8 @@ async function pageCount(path, token) {
   const sep = path.includes("?") ? "&" : "?";
   const res = await fetch(`${API}${path}${sep}per_page=1`, { headers: headers(token) });
   if (res.status === 403 || res.status === 429) {
+    const retry = res.headers.get("retry-after");
+    if (retry) throw new RateLimitError(Date.now() + (+retry) * 1000);
     if (res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(+res.headers.get("x-ratelimit-reset") * 1000);
     throw new Error("GitHub 403");
   }
