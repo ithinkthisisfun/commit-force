@@ -49,15 +49,15 @@ function difficulty(issue, now) {
   return Math.max(1, Math.min(3, 1 + Math.floor(s / 1.5)));
 }
 
-export function assembleLevel(repo, { issues = [], prs = [], commits = [], releases = [], windowDays = 365 } = {}) {
+export function assembleLevel(repo, { issues = [], prs = [], commits = [], releases = [], start = null, end = null } = {}) {
   repo = normalizeRepo(repo);
   const now = Date.now();
 
-  // Windowed, linear timeline: anchor on the newest activity and look back one year, positioning
-  // everything linearly by real date -- no time-warping. An issue created before the window but still
-  // active in it (kept because we fetch by last-updated) clamps to the window start: "already open
-  // when the year began," and still resolves at its real close date if it closed during the year.
-  const WINDOW = windowDays * DAY;
+  // Windowed, linear timeline. Callers pass an explicit [start, end] (ms) -- the loader's DATE RANGE,
+  // and eventually a SHARED range for multi-team comparisons so every team maps a track position to
+  // the same calendar date. Without one, default to the last year of the newest activity. No time-
+  // warping: everything positions linearly by real date; an item created before `start` clamps to the
+  // start ("already open when the window began") and still resolves at its real close date.
   const dates = [
     ...issues.map(i => new Date(i.createdAt).getTime()),
     ...issues.filter(i => i.closedAt).map(i => new Date(i.closedAt).getTime()),
@@ -65,8 +65,8 @@ export function assembleLevel(repo, { issues = [], prs = [], commits = [], relea
     ...prs.map(p => p.mergedAt || p.closedAt).filter(Boolean).map(d => new Date(d).getTime()),
     ...commits.filter(c => c.date).map(c => new Date(c.date).getTime()),
   ].filter(n => Number.isFinite(n));
-  const t1 = dates.length ? Math.max(...dates) : now;
-  const t0 = t1 - WINDOW;
+  const t1 = (end != null) ? end : (dates.length ? Math.max(...dates) : now);
+  const t0 = (start != null) ? start : t1 - 365 * DAY;
   const span = Math.max(1, t1 - t0);
   const frac = ms => Math.max(0, Math.min(1, (ms - t0) / span));   // linear, clamped into the window
   const timeline = { breaks: [{ t: 0, ms: t0 }, { t: 1, ms: t1 }], skips: [] };

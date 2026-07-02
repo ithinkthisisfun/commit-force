@@ -85,13 +85,11 @@
   <label>COMMIT BRANCH <span class="help" data-help="Stars are the commits from ONE branch. Pick the branch where the work happened — otherwise a repo whose activity lived on a side branch shows no stars at all. Issues and PRs are repo-wide, so they're unaffected.">?</span></label>
   <select id="branch" disabled><option>—</option></select>
 
-  <label>TIME RANGE <span class="help" data-help="How far back to read. A tighter range shows EVERY issue/PR/commit in it; a wide range on a very busy repo hits the caps (500 commits / 150 issues / 150 PRs) and only shows the newest slice — the picker warns you first.">?</span></label>
-  <select id="range">
-    <option value="30">Last month</option>
-    <option value="90">Last 3 months</option>
-    <option value="180">Last 6 months</option>
-    <option value="365" selected>Last year</option>
-  </select>
+  <label>DATE RANGE <span class="help" data-help="Read activity between these two dates. A tighter range shows EVERY issue/PR/commit in it; a wide range on a very busy repo hits the caps (500 commits / 150 issues / 150 PRs) and only shows the newest slice — the picker warns you first.">?</span></label>
+  <div class="row">
+    <div><input id="start" type="date" title="start date" aria-label="start date"></div>
+    <div><input id="end" type="date" title="end date" aria-label="end date"></div>
+  </div>
 
   <button id="go">GO</button>
   <div id="bar"><div id="fill"></div></div>
@@ -107,7 +105,15 @@
 import { buildLevelFromGitHub, checkRepo, getBranches, getCounts, getSuggestedRepos, windowCounts, CAPS, RateLimitError } from "./gitboy-github.js";
 import { normalizeRepo } from "./gitboy-core.js";
 const $ = id => document.getElementById(id);
-const repo=$("repo"), go=$("go"), bar=$("bar"), fill=$("fill"), status=$("status"), err=$("err"), check=$("check"), rangeSel=$("range");
+const repo=$("repo"), go=$("go"), bar=$("bar"), fill=$("fill"), status=$("status"), err=$("err"), check=$("check"), startInput=$("start"), endInput=$("end");
+// DATE RANGE: default to the last year (end = today, start = a year ago); prefill from ?start/?end.
+const DAY_MS = 86400000, isoDay = ms => new Date(ms).toISOString().slice(0, 10);
+{ const q = new URLSearchParams(location.search);
+  endInput.value = q.get("end") || isoDay(Date.now());
+  startInput.value = q.get("start") || isoDay(Date.now() - 365 * DAY_MS); }
+// [start, end] in ms; the end date is inclusive (whole day), so push it to the next midnight.
+function winDates(){ const s = Date.parse(startInput.value), e = Date.parse(endInput.value);
+  return { start: Number.isFinite(s) ? s : Date.now() - 365 * DAY_MS, end: Number.isFinite(e) ? e + DAY_MS : Date.now() }; }
 // suggested-repos dropdown: seed with solid picks (works even when rate-limited), then
 // fill from the Search API's "trending" (most-starred repos created recently)
 const suggest = $("suggest");
@@ -209,7 +215,9 @@ check.onclick = doCheck;
 function shareParams() {
   const r = normalizeRepo(repo.value.trim()); const p = new URLSearchParams();
   if (r.includes("/")) { p.set("repo", r);
-    if (branchesOk && branchSel.value && !branchSel.disabled) p.set("branch", branchSel.value); }
+    if (branchesOk && branchSel.value && !branchSel.disabled) p.set("branch", branchSel.value);
+    if (startInput.value) p.set("start", startInput.value);
+    if (endInput.value) p.set("end", endInput.value); }
   return p;
 }
 // keep the address-bar URL in sync with the selections, so the PHONE's own Share
@@ -222,7 +230,7 @@ function syncUrl() {
   if (ogUrl) ogUrl.setAttribute("content", location.origin + path);
 }
 branchSel.addEventListener("change", () => { sizeOverride = false; if (!busy) go.textContent = "GO"; syncUrl(); });
-rangeSel.addEventListener("change", () => { sizeOverride = false; if (!busy) go.textContent = "GO"; $("warn").textContent = ""; });
+for (const el of [startInput, endInput]) el.addEventListener("change", () => { sizeOverride = false; if (!busy) go.textContent = "GO"; $("warn").textContent = ""; syncUrl(); });
 
 // top-right in-app share icon: native share sheet (or clipboard) with these options
 const shareTip = $("shareTip");
@@ -251,12 +259,13 @@ if (repo.value.trim()) doCheck();
 let busy = false;
 async function start(){
   if (busy || !(repoOk && branchesOk)) return;
-  const r = repo.value.trim(), windowDays = +rangeSel.value || 365; err.textContent = "";
+  const r = repo.value.trim(), w = winDates(); err.textContent = "";
+  if (w.end <= w.start) { err.textContent = "✕ end date must be after the start date"; return; }
   // size gate: how much does the picked range hold? Over the caps -> recommend a tighter range first.
   if (!sizeOverride) {
     busy = true; go.disabled = true; go.textContent = "CHECKING…"; $("warn").textContent = ""; status.textContent = "checking size…"; spin.style.display = "inline-block";
     let c;
-    try { c = await windowCounts(r, windowDays, branchSel.value); }
+    try { c = await windowCounts(r, w.start, w.end, branchSel.value); }
     catch (e) { spin.style.display = "none"; busy = false; go.disabled = false; go.textContent = "GO"; status.textContent = "";
       err.textContent = (e instanceof RateLimitError) ? rateMsg(e) : "✕ " + (e.message || e); return; }
     spin.style.display = "none"; busy = false; go.disabled = false;
@@ -272,7 +281,7 @@ async function start(){
   busy = true; go.disabled = true; go.textContent = "LOADING…"; $("warn").textContent = ""; bar.style.display = "block"; fill.style.width = "3%"; status.textContent = "contacting github…";
   try {
     const level = await buildLevelFromGitHub(r, {
-      branch: branchSel.value, windowDays,
+      branch: branchSel.value, start: w.start, end: w.end,
       onProgress: (p, m) => { fill.style.width = Math.max(3, p) + "%"; if (m) status.textContent = m; },
     });
     sessionStorage.setItem("gitboy_lastrepo", level.repo);

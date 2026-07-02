@@ -39,16 +39,16 @@ async function paged(pathBase, token, max, onPage) {
   }
   return out.slice(0, max);
 }
-// page a newest-first list, stopping once items fall before `cutoff` (or `max` is reached).
-// `dateOf` picks the field the list is sorted by (updated_at), so we keep anything touched in-window.
-async function pagedWindow(pathBase, token, max, cutoff, dateOf, onPage) {
+// page a newest-first list, keeping items whose sort date is within [start, end]: skip anything
+// newer than `end`, stop once we page before `start`. `dateOf` picks that sort field (updated_at).
+async function pagedWindow(pathBase, token, max, start, end, dateOf, onPage) {
   const per = 100, out = [];
   for (let page = 1; out.length < max; page++) {
     const sep = pathBase.includes("?") ? "&" : "?";
     const arr = await gh(`${pathBase}${sep}per_page=${per}&page=${page}`, token);
     if (!Array.isArray(arr) || arr.length === 0) break;
     let hitOld = false;
-    for (const it of arr) { if (dateOf(it) < cutoff) { hitOld = true; break; } out.push(it); if (out.length >= max) break; }
+    for (const it of arr) { const d = dateOf(it); if (d < start) { hitOld = true; break; } if (d > end) continue; out.push(it); if (out.length >= max) break; }
     if (onPage) onPage(out.length);
     if (hitOld || arr.length < per || out.length >= max) break;
   }
@@ -99,15 +99,15 @@ async function pageCount(path, token) {
 export const CAPS = { issues: 150, prs: 150, commits: 500 };
 // How much a time range holds -- cheap (search total_count + the commits Link-header trick), so the
 // picker can warn before building. A field is null on a soft failure (count unknown); rate limits throw.
-export async function windowCounts(repoRaw, windowDays, branch = "", token = "") {
+export async function windowCounts(repoRaw, start, end, branch = "", token = "") {
   const repo = normalizeRepo(repoRaw);
-  const since = new Date(Date.now() - windowDays * 86400000), day = since.toISOString().slice(0, 10);
+  const sd = new Date(start).toISOString().slice(0, 10), ed = new Date(end).toISOString().slice(0, 10);
   const sha = branch ? `&sha=${encodeURIComponent(branch)}` : "";
   const soft = e => { if (e instanceof RateLimitError) throw e; return null; };
   const [issues, prs, commits] = await Promise.all([
-    searchTotal(repo, `type:issue updated:>${day}`, token).catch(soft),
-    searchTotal(repo, `type:pr updated:>${day}`, token).catch(soft),
-    pageCount(`/repos/${repo}/commits?since=${encodeURIComponent(since.toISOString())}${sha}`, token).catch(soft),
+    searchTotal(repo, `type:issue updated:${sd}..${ed}`, token).catch(soft),
+    searchTotal(repo, `type:pr updated:${sd}..${ed}`, token).catch(soft),
+    pageCount(`/repos/${repo}/commits?since=${encodeURIComponent(new Date(start).toISOString())}&until=${encodeURIComponent(new Date(end).toISOString())}${sha}`, token).catch(soft),
   ]);
   return { issues, prs, commits };
 }
@@ -132,26 +132,28 @@ export async function getRepoInfo(repoRaw, token = "") {
   return { repo, defaultBranch, branches, isPrivate, issues, prs };
 }
 
-// Fetch a repo's chosen window of activity (windowDays, default a year) and build a level. Everything is
-// windowed by last-updated (so an old issue that's still being discussed stays in) and capped hard --
+// Fetch a repo's activity within [start, end] (ms; default = last year to now) and build a level.
+// Windowed by last-updated (so an old issue that's still being discussed stays in) and capped hard --
 // no counting, no most-discussed fold-in. The core positions it all linearly, with no time-warps.
-export async function buildLevelFromGitHub(repoRaw, { token = "", branch = "", windowDays = 365, onProgress = () => {} } = {}) {
+export async function buildLevelFromGitHub(repoRaw, { token = "", branch = "", start, end, onProgress = () => {} } = {}) {
   const repo = normalizeRepo(repoRaw);
   if (!repo.includes("/")) throw new Error("enter a repo as owner/name");
-  const cutoff = Date.now() - windowDays * 86400000, cutoffISO = new Date(cutoff).toISOString();
+  if (end == null) end = Date.now();
+  if (start == null) start = end - 365 * 86400000;
+  const startISO = new Date(start).toISOString(), endISO = new Date(end).toISOString();
   const updatedOf = x => new Date(x.updated_at || x.created_at).getTime();
 
   // The /issues endpoint returns PRs too — filter them out with .pull_request. `since` filters by
-  // last-updated server-side; pagedWindow stops as soon as we page past the window.
-  onProgress(8, "reading recent issues…");
-  const issuesRaw = await pagedWindow(`/repos/${repo}/issues?state=all&sort=updated&direction=desc&since=${encodeURIComponent(cutoffISO)}`,
-    token, CAPS.issues + 60, cutoff, updatedOf, n => onProgress(8 + Math.min(20, n / CAPS.issues * 20), `reading issues… ${n}`));
+  // last-updated server-side; pagedWindow keeps only [start, end].
+  onProgress(8, "reading issues…");
+  const issuesRaw = await pagedWindow(`/repos/${repo}/issues?state=all&sort=updated&direction=desc&since=${encodeURIComponent(startISO)}`,
+    token, CAPS.issues + 60, start, end, updatedOf, n => onProgress(8 + Math.min(20, n / CAPS.issues * 20), `reading issues… ${n}`));
   const mapIssue = i => ({ number: i.number, title: i.title, url: i.html_url, state: i.state, labels: i.labels || [],
     author: i.user ? { login: i.user.login } : null, comments: i.comments, createdAt: i.created_at, updatedAt: i.updated_at, closedAt: i.closed_at });
   const issues = issuesRaw.filter(i => !i.pull_request).slice(0, CAPS.issues).map(mapIssue);
 
   onProgress(34, "reading pull requests…");
-  const prsRaw = await pagedWindow(`/repos/${repo}/pulls?state=all&sort=updated&direction=desc`, token, CAPS.prs, cutoff, updatedOf);
+  const prsRaw = await pagedWindow(`/repos/${repo}/pulls?state=all&sort=updated&direction=desc`, token, CAPS.prs, start, end, updatedOf);
   const prs = prsRaw.map(p => ({ number: p.number, title: p.title, state: p.state, author: p.user ? { login: p.user.login } : null,
     createdAt: p.created_at, closedAt: p.closed_at, mergedAt: p.merged_at }));
 
@@ -162,12 +164,12 @@ export async function buildLevelFromGitHub(repoRaw, { token = "", branch = "", w
     releases = rel.map(r => ({ tag: r.tag_name, name: r.name, pre: r.prerelease, publishedAt: r.published_at }));
   } catch (e) { if (e instanceof RateLimitError) throw e; }
 
-  // Commits are optional garnish (the star shower); `since` windows them by commit date. ANY failure
+  // Commits are optional garnish (the star shower); since/until window them by commit date. ANY failure
   // here just skips the stars and reports why, rather than discarding the whole build.
   onProgress(58, "reading commits…");
   let commitList = [], commitError = null;
   try {
-    const commitsPath = `/repos/${repo}/commits?since=${encodeURIComponent(cutoffISO)}${branch ? `&sha=${encodeURIComponent(branch)}` : ""}`;
+    const commitsPath = `/repos/${repo}/commits?since=${encodeURIComponent(startISO)}&until=${encodeURIComponent(endISO)}${branch ? `&sha=${encodeURIComponent(branch)}` : ""}`;
     const comRaw = await paged(commitsPath, token, CAPS.commits, n => onProgress(58 + Math.min(30, n / CAPS.commits * 30), `reading commits… ${n}`));
     commitList = comRaw.map(c => ({ sha: (c.sha || "").slice(0, 7),
       date: c.commit?.author?.date || c.commit?.committer?.date,
@@ -178,7 +180,7 @@ export async function buildLevelFromGitHub(repoRaw, { token = "", branch = "", w
   }
 
   onProgress(92, "building level…");
-  const level = assembleLevel(repo, { issues, prs, commits: commitList, releases, windowDays });
+  const level = assembleLevel(repo, { issues, prs, commits: commitList, releases, start, end });
   level.branch = branch || "";           // remembered so the game can build a shareable link
   if (commitError) level.commitsError = commitError;
   onProgress(100, "done");
