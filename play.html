@@ -295,7 +295,7 @@ const RUNSPEED=3.6, DURATION_SEC=58, TRACK_LEN=RUNSPEED*60*DURATION_SEC;
 const LEADIN=W+24, T0X=START_X+LEADIN;   // a screen of open ground before the timeline begins, so nothing time-warps at the gun
 const FLOAT_LEN=W;                        // how far (px) the crew hang weightless while crossing a long warp -- about one screen
 const RIDE_STINT=180;                     // frames a dude works one truck (~3s) before hopping off; the truck resolves on its own close date
-const CLOSE_LEAD=220;                      // px before a closed truck's close date to recruit a rider back on, so it's a crewed resolution not a self-destruct
+const CLOSE_LEAD=400;                      // px before a closed truck's close date to recruit a rider back on, so it's a crewed resolution not a self-destruct
 const MINGAP=22, CLUSTER_GAP=24, MAXTRUCKS=10;
 const TRUCK_LEAD=Math.round(W*1.0+60);   // world-px head start: dispatch this far ahead of a truck's due point so it slides in from off-screen (now a longer glide to the ~40% engage point)
 const BOSS_BULLET=240;   // boss: 4s bullet-time, then a running battle (open boss escapes, closed boss dies)
@@ -592,7 +592,8 @@ function update(){
             SFX.yeah(); banner="BOSS DEFEATED"; bannerT=200; popCard(o,"RESOLVED"); setTicker(o,"RESOLVED","#8fd8a0"); lastEvent=crew[0].name+" resolved #"+o.n; }
           o.riders=null; }
       } else {                                             // regular truck: a dude works it ~3s then hops off; a CLOSED one booms on its real close date
-        o.vx+=((bossFight?RUNSPEED*0.32:RUNSPEED)-o.vx)*0.1;
+        const overdue = o.resolves && frontX>=o.closeX;      // past its close date -> expiring: slow down and let the camera carry it left past the midline
+        o.vx += ((overdue ? RUNSPEED*0.35 : (bossFight?RUNSPEED*0.32:RUNSPEED)) - o.vx) * (overdue?0.05:0.1);
         o.hp = o.resolves ? Math.max(0,Math.min(1,(o.closeX-frontX)/Math.max(1,o.closeX-o.boardX))) : Math.max(0,1-o.timer/RIDE_STINT);
         const nearClose = o.resolves && frontX>=o.closeX-CLOSE_LEAD;      // close date imminent -> keep/get a rider aboard for it
         if(o.riders){
@@ -602,16 +603,19 @@ function update(){
             const crew=o.riders; crew.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6; r.act="idle"; }); o.riders=null;
             if(!o.resolves){ o.phase="out"; o.vx=RUNSPEED*0.5; popCard(o,"STILL OPEN"); lastEvent=crew[0].name+" dropped #"+o.n; }
             else lastEvent=crew[0].name+" working #"+o.n; }               // closed: rolls on toward its close date
-        } else if(nearClose){                               // coasting truck about to close -> grab a free dude so it isn't a self-destruct
+        } else if(nearClose){                               // coasting truck near/past close -> grab a free dude so it isn't a self-destruct
           const r=pickRider(o); if(r){ r.riding=o; r.rideSlot=0; o.riders=[r]; o.hadRider=true; }
         }
-        if(o.resolves && o.phase==="battle" && frontX>=o.closeX){          // resolved -- on the date it actually closed
-          o.phase="boom"; o.boomT=0; SFX.explosion(); shake=9;
-          burst(o.x,GROUND_Y-14,"#ffd76e",26,4); burst(o.x,GROUND_Y-12,"#e33",20,3.6); debris(o.x,GROUND_Y-14,12);
-          gib(o.x,o.roof+8,10); addSplat(o.x);
-          if(o.riders){ o.riders.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6.5; r.act="idle"; }); o.riders=null; }
-          if(o.size>=3) SFX.yeah();
-          popCard(o,"RESOLVED"); setTicker(o,"RESOLVED","#8fd8a0"); lastEvent="#"+o.n+" resolved"; }
+        if(overdue){                                        // blow it once a dude's actually aboard, or once it's slid past center with nobody
+          const mounted = o.riders && Math.abs(o.riders[0].x - o.x) < 26;
+          if(mounted || o.x-camX <= W*0.16){
+            o.phase="boom"; o.boomT=0; SFX.explosion(); shake=9;
+            burst(o.x,GROUND_Y-14,"#ffd76e",26,4); burst(o.x,GROUND_Y-12,"#e33",20,3.6); debris(o.x,GROUND_Y-14,12);
+            gib(o.x,o.roof+8,10); addSplat(o.x);
+            if(o.riders){ o.riders.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6.5; r.act="idle"; }); o.riders=null; }
+            if(o.size>=3) SFX.yeah();
+            popCard(o,"RESOLVED"); setTicker(o,"RESOLVED","#8fd8a0"); lastEvent="#"+o.n+" resolved"; }
+        }
       }
     } else if(o.phase==="boom"){ o.boomT++;
       if(o.boss){ if(o.boomT%4===0 && o.boomT<48){ const bx=o.x+(Math.random()*2-1)*o.bw*0.5;   // chain of blasts down the length of the rig
@@ -681,8 +685,8 @@ function updateActor(a,frontX){
   if(a.floating){
     const desired=anchorX-a.lag, dx=desired-a.x;
     a.vx += (Math.max(-0.6,Math.min(1.0,dx*0.05))*RUNSPEED*1.7 - a.vx)*0.2;   // keep drifting forward through the warp
-    const hoverY = GROUND_Y - 40 - a.floatBias - Math.sin((time+a.lag)*0.06)*5;
-    a.x += a.vx; a.y += (hoverY-a.y)*0.06; a.vy=0; a.onGround=false; a.face=1; a.act="idle"; a.actT=0; a.animT=0;
+    const hoverY = GROUND_Y - 72 - a.floatBias - Math.sin((time+a.lag)*0.06)*6;   // hang high off the ground
+    a.x += a.vx; a.y += (hoverY-a.y)*0.16; a.vy=0; a.onGround=false; a.face=1; a.act="idle"; a.actT=0; a.animT=0;   // snap upward fast
     if(a.x<8) a.x=8; return;
   }
   a.jumpCd--;
@@ -985,8 +989,8 @@ function drawHUD(){
 }
 
 // faint static calendar grid behind the action -- spacing = the project's rhythm
-function drawDayLines(){ if(!DAYLINES.length) return; g.globalAlpha=0.12; g.fillStyle="#86a6b8";
-  for(const wx of DAYLINES){ const x=(wx-camX)|0; if(x<-1||x>W) continue; for(let yy=2; yy<H; yy+=6) g.fillRect(x,yy,1,2); } g.globalAlpha=1; }
+function drawDayLines(){ if(!DAYLINES.length) return; g.globalAlpha=0.3; g.fillStyle="#b8d4e4";
+  for(const wx of DAYLINES){ const x=(wx-camX)|0; if(x<-1||x>W) continue; for(let yy=2; yy<H; yy+=6) g.fillRect(x,yy,1,3); } g.globalAlpha=1; }
 // a skipped quiet stretch, collapsed to a narrow slice: dashed brackets over a dimmed band, gap labelled
 function dashV(x,col){ g.fillStyle=col; const xi=x|0; for(let yy=(time>>1)%8; yy<H; yy+=8) g.fillRect(xi,yy,1,5); }   // dashes drift downward
 function drawSeams(){ for(const s of SKIPS){ let x0=s.x0-camX, x1=s.x1-camX; if(x1<x0+TS) x1=x0+TS;   // never thinner than one ground block
