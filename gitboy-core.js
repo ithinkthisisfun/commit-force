@@ -53,10 +53,19 @@ export function assembleLevel(repo, { issues = [], prs = [], commits = [], relea
   repo = normalizeRepo(repo);
   const now = Date.now();
 
-  // trucks appear when the issue OPENS; PRs seed the axis too
+  // Every issue/PR ACTIVITY event seeds the timeline: opened, closed, or merged. Closing an issue
+  // is activity too, so a stretch is only "dead" (collapsible to a warp) when nothing happened in
+  // it at all -- no opens AND no closes. Trucks still appear at their OPEN date; the close knots
+  // just keep resolutions from being buried inside a warp.
+  const closeMs = [
+    ...issues.filter(i => i.closedAt).map(i => new Date(i.closedAt).getTime()),
+    ...prs.map(p => p.mergedAt || p.closedAt).filter(Boolean).map(d => new Date(d).getTime()),
+  ];
+  const closeSet = new Set(closeMs);
   const workEpochs = [...new Set([
     ...issues.map(i => new Date(i.createdAt).getTime()),
     ...prs.map(p => new Date(p.createdAt).getTime()),
+    ...closeMs,
   ])].sort((a, b) => a - b);
   const allEpochs = [...workEpochs, ...commits.map(c => new Date(c.date).getTime())];
   const t0 = workEpochs.length ? workEpochs[0] : (allEpochs.length ? Math.min(...allEpochs) : now);
@@ -94,10 +103,22 @@ export function assembleLevel(repo, { issues = [], prs = [], commits = [], relea
     // (ms), so the player can show a live date; `skips` are the gaps that got clamped (realGap >
     // CAP) -- the player flashes as the runner crosses one, since a lot of real time passes there
     // in very little track. The map is piecewise-linear between knots, exactly inverting frac().
+    // Seams (the dashed "time skipped" brackets) mark only real silences: a gap must exceed CAP
+    // AND be at least SEAM_MIN, so brief lulls just compress without fanfare. Runs of skips at
+    // consecutive gap indices -- isolated ancient events (e.g. a repo's most-discussed issues,
+    // each alone in time) flanked by huge gaps -- coalesce into ONE seam spanning the whole era,
+    // instead of a picket fence of back-to-back brackets.
+    const SEAM_MIN = 30 * DAY;
     timeline = { breaks: ev.map((ms, i) => ({ t: C[i] / totalC, ms })), skips: [] };
+    let lastIdx = -2;
     for (let i = 1; i < ev.length; i++) {
       const gap = ev[i] - ev[i - 1];
-      if (gap > CAP) timeline.skips.push({ t0: C[i - 1] / totalC, t1: C[i] / totalC, from: ev[i - 1], to: ev[i], gapDays: Math.round(gap / DAY) });
+      if (!(gap > CAP && gap >= SEAM_MIN)) continue;
+      // extend the previous seam only across an isolated OPEN; a close between two dead gaps is real
+      // activity, so it stays a boundary (the two stay separate seams) rather than being swallowed.
+      if (i === lastIdx + 1 && !closeSet.has(ev[i - 1])) { const m = timeline.skips[timeline.skips.length - 1]; m.t1 = C[i] / totalC; m.to = ev[i]; m.gapDays = Math.round((m.to - m.from) / DAY); }
+      else timeline.skips.push({ t0: C[i - 1] / totalC, t1: C[i] / totalC, from: ev[i - 1], to: ev[i], gapDays: Math.round(gap / DAY) });
+      lastIdx = i;
     }
   }
 

@@ -292,6 +292,10 @@ const heroById=Object.fromEntries(LV.heroes.map(h=>[h.id,h]));
 // ---- tempo & timeline ---------------------------------------------------
 const GROUND_Y=1000, camY=GROUND_Y-(H-52), START_X=150;
 const RUNSPEED=3.6, DURATION_SEC=58, TRACK_LEN=RUNSPEED*60*DURATION_SEC;
+const LEADIN=W+24, T0X=START_X+LEADIN;   // a screen of open ground before the timeline begins, so nothing time-warps at the gun
+const FLOAT_LEN=W;                        // how far (px) the crew hang weightless while crossing a long warp -- about one screen
+const RIDE_STINT=180;                     // frames a dude works one truck (~3s) before hopping off; the truck resolves on its own close date
+const CLOSE_LEAD=220;                      // px before a closed truck's close date to recruit a rider back on, so it's a crewed resolution not a self-destruct
 const MINGAP=22, CLUSTER_GAP=24, MAXTRUCKS=10;
 const TRUCK_LEAD=Math.round(W*1.0+60);   // world-px head start: dispatch this far ahead of a truck's due point so it slides in from off-screen (now a longer glide to the ~40% engage point)
 const BOSS_BULLET=240;   // boss: 4s bullet-time, then a running battle (open boss escapes, closed boss dies)
@@ -299,26 +303,27 @@ const TRUCK_ROOF=GROUND_Y-22, TS=16;
 
 const OBS=LV.obstacles.map(o=>({ ...o }));
 const STARS_SRC=(LV.stars||[]).map(s=>({ ...s }));
-for(const o of OBS){ o.spawnX=START_X+o.t*TRACK_LEN; }
+for(const o of OBS){ o.spawnX=T0X+o.t*TRACK_LEN; }
 OBS.sort((a,b)=>a.spawnX-b.spawnX);
 let prev=-1e9; for(const o of OBS){ if(o.spawnX<prev+MINGAP) o.spawnX=prev+MINGAP; prev=o.spawnX; }
-for(const s of STARS_SRC) s.x=START_X+s.t*TRACK_LEN;
+for(const s of STARS_SRC) s.x=T0X+s.t*TRACK_LEN;
 STARS_SRC.sort((a,b)=>a.x-b.x);
 // PRs -> airplanes in the sky
-const PLANES=(LV.planes||[]).map(p=>({ ...p, spawnX:START_X+p.t*TRACK_LEN, launched:false }));
+const PLANES=(LV.planes||[]).map(p=>({ ...p, spawnX:T0X+p.t*TRACK_LEN, launched:false }));
 PLANES.sort((a,b)=>a.spawnX-b.spawnX);
-const RELEASES=(LV.releases||[]).map(r=>({ ...r, x:START_X+r.t*TRACK_LEN, hit:false, raise:0 }));
+const RELEASES=(LV.releases||[]).map(r=>({ ...r, x:T0X+r.t*TRACK_LEN, hit:false, raise:0 }));
 const TRUCK_SIZES={ 1:{bw:22,ch:9,cargoH:9}, 2:{bw:30,ch:10,cargoH:11}, 3:{bw:40,ch:12,cargoH:15}, boss:{bw:180,ch:14,cargoH:22} };
 function initTruck(o){ o.spawned=false; o.done=false; o.phase="pending"; o.riders=null; o.hadRider=false;
   o.x=0; o.vx=0; o.timer=0; o.wheel=0; o.boomT=0; o.cap=o.boss?2:1;   // how many crew ride it (boss uses 2 -> the rest keep fighting small trucks)
   const g=TRUCK_SIZES[o.boss?"boss":o.size]||TRUCK_SIZES[2]; o.bw=g.bw; o.ch=g.ch; o.cargoH=g.cargoH;
   o.roof=GROUND_Y-3-o.ch-o.cargoH;                          // rider stands on the cargo top
   if(o.boss) o.roof=GROUND_Y-25;                            // war rig: crew stand on the long tank tops
-  // on-screen battle ~ the issue's open->close lifetime (floor so short-lived aren't instant, cap for pacing)
-  let dur=Math.max(55, Math.min(170, Math.round(55 + (o.life||0)*900)));
-  // boss fight length scales with how discussed the issue is (works for open OR closed bosses); the OUTCOME
-  // (defeated vs escaped) is decided by whether the issue actually closed (o.resolves), not the length.
-  o.dur = o.boss ? Math.min(1300, Math.round(480 + (o.comments||0)*12)) : dur; }   // ~8s (few comments) .. ~22s (heavily discussed)
+  o.closeX = o.spawnX + (o.life||0)*TRACK_LEN;              // world-x of the issue's real close date -- a resolved truck booms here
+  o.boardX = 0; o.hp = 1;
+  // boss fight length scales with how discussed the issue is; the OUTCOME (defeated vs escaped) is
+  // decided by whether the issue actually closed (o.resolves), not the length. Non-boss trucks don't
+  // use dur -- they resolve at o.closeX (their actual close date).
+  o.dur = o.boss ? Math.min(1300, Math.round(480 + (o.comments||0)*12)) : 0; }
 OBS.forEach(initTruck);
 const BOSS=OBS.find(o=>o.boss)||null;                      // at most one boss truck
 
@@ -339,7 +344,7 @@ const FLAG_X=lastX+Math.min(4200,Math.max(320,engagedN*16)), WORLD_END=FLAG_X+24
 const PUNCH_T=12, KICK_T=22, GRAV=0.6, JUMP=9.4, MAXFALL=12;
 const actors=LV.heroes.map((h,i)=>({ hero:h,id:h.id,name:h.name,pal:h.pal,real:h.real,
   x:START_X-40-i*16, y:GROUND_Y, vx:0, vy:0, face:1, onGround:true,
-  act:"idle", actT:0, animT:0, squash:0, lag:i*15, controlled:false, jumpCd:0, riding:null, prefersHigh:i%2===0 }));
+  act:"idle", actT:0, animT:0, squash:0, lag:i*15, controlled:false, jumpCd:0, riding:null, floating:false, floatBias:(i*13)%37, prefersHigh:i%2===0 }));
 const lead=actors.find(a=>a.id===LV.lead)||actors[0];
 
 let anchorX=START_X, mode="auto", camX=0, shake=0, time=0;
@@ -355,7 +360,9 @@ const FWC=["#ff4d4d","#ffd24d","#4dff88","#4dd2ff","#b84dff","#ff4db8","#ffffff"
 // ---- timeline clock: live date readout, dashed "time seams", real-time progress -----------
 const TL=(LV.timeline && Array.isArray(LV.timeline.breaks) && LV.timeline.breaks.length) ? LV.timeline : null;
 const SKIPS=TL ? TL.skips.slice().sort((a,b)=>a.t0-b.t0) : [];
-for(const s of SKIPS){ s.x0=START_X+s.t0*TRACK_LEN; s.x1=START_X+s.t1*TRACK_LEN; s.c0=s.x0<=W/2; s.c1=s.x1<=W/2; }   // world x of each dashed edge + "swept past center yet?"
+for(const s of SKIPS){ s.x0=T0X+s.t0*TRACK_LEN; s.x1=T0X+s.t1*TRACK_LEN; s.c0=s.x0<=W/2; s.c1=s.x1<=W/2;   // world x of each dashed edge + "swept past center yet?"
+  s.warpEnd=s.x0+Math.max(FLOAT_LEN*0.4, Math.min(FLOAT_LEN, FLOAT_LEN*s.gapDays/365)); }                    // weightless zone: ~half a screen for a month, a full screen for a year+
+const warpZone=x=>SKIPS.some(s=>x>=s.x0 && x<=s.warpEnd);
 const T_START=TL?TL.breaks[0].ms:0, T_END=TL?TL.breaks[TL.breaks.length-1].ms:0, T_SPAN=Math.max(1,T_END-T_START);
 let curDateMs=null, timeFlash=0, skipText="", skipSub="", skipT=0;
 function fmtDate(ms){ const d=new Date(ms); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
@@ -367,6 +374,23 @@ function skipLabel(days){ if(days>=365) return (days>=730?Math.round(days/365)+"
   if(days>=60) return Math.round(days/30)+" months skipped"; if(days>=21) return Math.round(days/7)+" weeks skipped"; return days+" days skipped"; }
 function gapShort(days){ if(days>=365) return days>=730?Math.round(days/365)+"yr":"1yr"; if(days>=60) return Math.round(days/30)+"mo"; if(days>=14) return Math.round(days/7)+"w"; return days+"d"; }
 function fireSkip(s){ timeFlash=1; skipText=skipLabel(s.gapDays); skipSub=fmtDate(s.from)+"  →  "+fmtDate(s.to); skipT=100; shake=Math.max(shake,3); SFX.timewarp(); }
+const DAY=86400000;
+function msToT(ms){ if(!TL) return 0; const b=TL.breaks;                   // real time -> track position (inverse of tToMs)
+  if(ms<=b[0].ms) return b[0].t; if(ms>=b[b.length-1].ms) return b[b.length-1].t;
+  let lo=0,hi=b.length-1; while(lo+1<hi){ const m=(lo+hi)>>1; if(b[m].ms<=ms) lo=m; else hi=m; }
+  const dm=b[hi].ms-b[lo].ms, f=dm>0?(ms-b[lo].ms)/dm:0; return b[lo].t+f*(b[hi].t-b[lo].t); }
+// faint dotted grid -- one line per date tick, so the spacing reads as the project's rhythm (wide =
+// unhurried, tight = frantic). Unit adapts to the ACTIVE (un-skipped) span so a decade-old repo
+// doesn't turn solid; lines inside a collapsed seam are dropped (the seam already stands for them).
+const DAYLINES=(()=>{ if(!TL || T_SPAN<=0) return [];
+  let skipDays=0; for(const s of SKIPS) skipDays+=(s.to-s.from)/DAY;
+  const activeDays=Math.max(1, T_SPAN/DAY - skipDays);
+  let unit=DAY; if(activeDays>150){ if(activeDays/7<=150) unit=7*DAY; else if(activeDays/30<=150) unit=30*DAY; else unit=365*DAY; }
+  const inSkip=t=>SKIPS.some(s=>t>=s.t0 && t<=s.t1);
+  const out=[]; let lastX=-1e9;
+  for(let ms=Math.ceil(T_START/DAY)*DAY; ms<=T_END; ms+=unit){ const t=msToT(ms); if(inSkip(t)) continue;
+    const x=T0X+t*TRACK_LEN; if(x-lastX>=3){ out.push(x); lastX=x; } }
+  return out; })();
 
 function burst(x,y,c,n=12,spd=2.6){ for(let i=0;i<n;i++) fx.push({x,y,vx:(Math.random()*2-1)*spd,vy:(Math.random()*2-1)*spd-1,life:16+Math.random()*12,color:c}); }
 function debris(x,y,n=10){ for(let i=0;i<n;i++) fx.push({x,y,vx:(Math.random()*2-1)*3.2,vy:-Math.random()*4.5-1,life:28+Math.random()*14,color:Math.random()<0.5?"#7a531f":"#4a3038"}); }
@@ -497,8 +521,8 @@ function drawMissile(m){ const x=Math.round(m.x), y=Math.round(m.y);
 function startAttack(a,move){ if(a.act!=="idle")return;
   if(move==="kick"){ a.act="kick"; a.actT=KICK_T; a.vx=a.face*4.2; a.vy=Math.min(a.vy,-1.8); } else { a.act="punch"; a.actT=PUNCH_T; } }
 function doJump(a){ if(a.onGround){ a.vy=-JUMP; a.onGround=false; burst(a.x,a.y-1,a.pal.light,5,1.6); burst(a.x,a.y-2,"#b81f1f",3,1.2); } }
-function pickRider(o){ const own=actors.find(a=>a.id===o.hero&&!a.riding&&!a.controlled); if(own)return own;
-  const free=actors.filter(a=>!a.riding&&!a.controlled); if(!free.length)return null;
+function pickRider(o){ const own=actors.find(a=>a.id===o.hero&&!a.riding&&!a.controlled&&!a.floating); if(own)return own;
+  const free=actors.filter(a=>!a.riding&&!a.controlled&&!a.floating); if(!free.length)return null;
   return free.reduce((p,q)=>Math.abs(q.x-o.x)<Math.abs(p.x-o.x)?q:p,free[0]); }
 
 // ---- update -------------------------------------------------------------
@@ -543,41 +567,51 @@ function update(){
     if(o.phase==="approach"){
       if(o.x-camX<=W*0.40){                          // truck reaches ~40% (just ahead of the crew) -> jump on
         let crew;
-        if(o.cap>1) crew=actors.filter(a=>!a.riding&&!a.controlled).slice(0,o.cap);   // boss: dogpile
+        if(o.cap>1) crew=actors.filter(a=>!a.riding&&!a.controlled&&!a.floating).slice(0,o.cap);   // boss: dogpile
         else { const r=pickRider(o); crew=r?[r]:[]; }
-        if(crew.length){ crew.forEach((r,i)=>{ r.riding=o; r.rideSlot=i; }); o.riders=crew; o.hadRider=true; o.phase="battle"; o.timer=0;
+        if(crew.length){ crew.forEach((r,i)=>{ r.riding=o; r.rideSlot=i; }); o.riders=crew; o.hadRider=true; o.phase="battle"; o.timer=0; o.boardX=frontX;
           if(o.boss){ banner="BOSS  #"+o.n; bannerT=130; SFX.yeah(); lastEvent="BOSS #"+o.n+" -- all hands!"; } else lastEvent=crew[0].name+" boards #"+o.n; }
         else o.vx=RUNSPEED;                          // hover by the pack until crew free up
       }
     } else if(o.phase==="battle"){
       o.timer++;
-      if(o.boss){
+      if(o.boss){                                          // boss keeps its long, ridden brawl (dur-based)
         if(o.timer<BOSS_BULLET){ const drift=Math.sin(o.timer*0.045)*1.8 + Math.sin(o.timer*0.014+1)*1.1;  // bullet time: slow, swaying
           o.vx+=((RUNSPEED*0.34 + drift) - o.vx)*0.06; }
         else o.vx+=((RUNSPEED + Math.sin(o.timer*0.06)*1.3) - o.vx)*0.08;   // running battle: chase at full speed
-      } else o.vx+=((bossFight?RUNSPEED*0.32:RUNSPEED)-o.vx)*0.1;
-      if(o.timer%14===0) o.riders.forEach(r=>{ r.act="punch"; r.actT=PUNCH_T; });
-      if(o.timer%8===0) burst(o.x+8,o.roof+6,"#ffd",3,1.6);
-      if(o.boss && o.timer>16 && o.timer%16===0){          // boss takes a beating: small blasts before it goes
-        burst(o.x+(Math.random()*2-1)*22, o.roof+Math.random()*12, pick(["#ffd76e","#e33"]), 8, 2.6); gib(o.x+(Math.random()*2-1)*18,o.roof+6,4); shake=Math.max(shake,4); SFX.planeBoom(); }
-      if(o.timer>=o.dur){
-        const crew=o.riders;
-        if(o.boss && !o.resolves){                          // the most-discussed issue is still OPEN -> the rig floors it and escapes right
-          o.phase="flee"; o.vx=RUNSPEED*1.3;
-          crew.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6; r.act="idle"; });
-          banner="BOSS ESCAPED!"; bannerT=200; SFX.bossHorn();
-          popCard(o,"ESCAPED!"); setTicker(o,"ESCAPED","#e6c36a"); lastEvent="BOSS #"+o.n+" got away!";
-        } else if(o.resolves){ o.phase="boom"; o.boomT=0; SFX.explosion(); const big=o.boss?2:1; shake=9*big;
-          burst(o.x,GROUND_Y-14,"#ffd76e",26*big,4); burst(o.x,GROUND_Y-12,"#e33",20*big,3.6); debris(o.x,GROUND_Y-14,12*big);
-          gib(o.x,o.roof+8,o.boss?26:10); addSplat(o.x);
-          crew.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6.5; r.act="idle"; });
-          if(o.boss){ SFX.yeah(); banner="BOSS DEFEATED"; bannerT=200; } else if(o.size>=3) SFX.yeah();
-          popCard(o,"RESOLVED"); setTicker(o,"RESOLVED","#8fd8a0"); lastEvent=crew[0].name+" resolved #"+o.n;
-        } else { o.phase="out"; o.vx=RUNSPEED*0.5;    // worked on, but never resolved -> hop off
-          crew.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6; r.act="idle"; });
-          popCard(o,"STILL OPEN"); lastEvent=crew[0].name+" dropped #"+o.n;
+        if(o.timer%14===0) o.riders.forEach(r=>{ r.act="punch"; r.actT=PUNCH_T; });
+        if(o.timer%8===0) burst(o.x+8,o.roof+6,"#ffd",3,1.6);
+        if(o.timer>16 && o.timer%16===0){                  // boss takes a beating: small blasts before it goes
+          burst(o.x+(Math.random()*2-1)*22, o.roof+Math.random()*12, pick(["#ffd76e","#e33"]), 8, 2.6); gib(o.x+(Math.random()*2-1)*18,o.roof+6,4); shake=Math.max(shake,4); SFX.planeBoom(); }
+        if(o.timer>=o.dur){ const crew=o.riders;
+          if(!o.resolves){ o.phase="flee"; o.vx=RUNSPEED*1.3; crew.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6; r.act="idle"; });
+            banner="BOSS ESCAPED!"; bannerT=200; SFX.bossHorn(); popCard(o,"ESCAPED!"); setTicker(o,"ESCAPED","#e6c36a"); lastEvent="BOSS #"+o.n+" got away!"; }
+          else { o.phase="boom"; o.boomT=0; SFX.explosion(); shake=18;
+            burst(o.x,GROUND_Y-14,"#ffd76e",52,4); burst(o.x,GROUND_Y-12,"#e33",40,3.6); debris(o.x,GROUND_Y-14,24);
+            gib(o.x,o.roof+8,26); addSplat(o.x); crew.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6.5; r.act="idle"; });
+            SFX.yeah(); banner="BOSS DEFEATED"; bannerT=200; popCard(o,"RESOLVED"); setTicker(o,"RESOLVED","#8fd8a0"); lastEvent=crew[0].name+" resolved #"+o.n; }
+          o.riders=null; }
+      } else {                                             // regular truck: a dude works it ~3s then hops off; a CLOSED one booms on its real close date
+        o.vx+=((bossFight?RUNSPEED*0.32:RUNSPEED)-o.vx)*0.1;
+        o.hp = o.resolves ? Math.max(0,Math.min(1,(o.closeX-frontX)/Math.max(1,o.closeX-o.boardX))) : Math.max(0,1-o.timer/RIDE_STINT);
+        const nearClose = o.resolves && frontX>=o.closeX-CLOSE_LEAD;      // close date imminent -> keep/get a rider aboard for it
+        if(o.riders){
+          if(o.timer%14===0) o.riders.forEach(r=>{ r.act="punch"; r.actT=PUNCH_T; });
+          if(o.timer%8===0) burst(o.x+8,o.roof+6,"#ffd",3,1.6);
+          if(o.timer>=RIDE_STINT && !nearClose){            // stint up (and not about to close) -> hop off to work the next truck
+            const crew=o.riders; crew.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6; r.act="idle"; }); o.riders=null;
+            if(!o.resolves){ o.phase="out"; o.vx=RUNSPEED*0.5; popCard(o,"STILL OPEN"); lastEvent=crew[0].name+" dropped #"+o.n; }
+            else lastEvent=crew[0].name+" working #"+o.n; }               // closed: rolls on toward its close date
+        } else if(nearClose){                               // coasting truck about to close -> grab a free dude so it isn't a self-destruct
+          const r=pickRider(o); if(r){ r.riding=o; r.rideSlot=0; o.riders=[r]; o.hadRider=true; }
         }
-        o.riders=null;
+        if(o.resolves && o.phase==="battle" && frontX>=o.closeX){          // resolved -- on the date it actually closed
+          o.phase="boom"; o.boomT=0; SFX.explosion(); shake=9;
+          burst(o.x,GROUND_Y-14,"#ffd76e",26,4); burst(o.x,GROUND_Y-12,"#e33",20,3.6); debris(o.x,GROUND_Y-14,12);
+          gib(o.x,o.roof+8,10); addSplat(o.x);
+          if(o.riders){ o.riders.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6.5; r.act="idle"; }); o.riders=null; }
+          if(o.size>=3) SFX.yeah();
+          popCard(o,"RESOLVED"); setTicker(o,"RESOLVED","#8fd8a0"); lastEvent="#"+o.n+" resolved"; }
       }
     } else if(o.phase==="boom"){ o.boomT++;
       if(o.boss){ if(o.boomT%4===0 && o.boomT<48){ const bx=o.x+(Math.random()*2-1)*o.bw*0.5;   // chain of blasts down the length of the rig
@@ -603,7 +637,7 @@ function update(){
 
   // timeline clock: map the front runner's track position back to a real date; flash as each
   // dashed seam edge sweeps past screen center (a compressed quiet stretch getting crossed)
-  if(TL){ curDateMs=tToMs(Math.max(0,Math.min(1,(frontX-START_X)/TRACK_LEN))); const mid=W/2;
+  if(TL){ curDateMs=tToMs(Math.max(0,Math.min(1,(frontX-T0X)/TRACK_LEN))); const mid=W/2;
     for(const s of SKIPS){ if(!s.c0 && s.x0-camX<=mid){ s.c0=true; fireSkip(s); }
       if(!s.c1 && s.x1-camX<=mid){ s.c1=true; fireSkip(s); } } }
   if(skipT>0) skipT--; if(timeFlash>0) timeFlash=Math.max(0,timeFlash-0.045);
@@ -634,6 +668,7 @@ function update(){
 }
 
 function updateActor(a,frontX){
+  a.floating = !a.riding && warpZone(a.x);
   // ---- riding a truck: pinned on the roof, throwing punches ----
   if(a.riding){
     const o=a.riding, n=o.riders?o.riders.length:1, tx=o.x + ((a.rideSlot||0)-(n-1)/2)*(o.boss?72:12);  // fan riders across the roof (one per tank for the war rig)
@@ -641,6 +676,14 @@ function updateActor(a,frontX){
     a.y+=(o.roof-a.y)*0.45; a.vy=0; a.onGround=true; a.face=1;
     if(a.act!=="idle"){ a.actT--; if(a.actT<=0)a.act="idle"; }
     a.animT=0; return;
+  }
+  // ---- weightless drift while crossing a long time-warp: rise to a bob, hang, gravity resumes on exit ----
+  if(a.floating){
+    const desired=anchorX-a.lag, dx=desired-a.x;
+    a.vx += (Math.max(-0.6,Math.min(1.0,dx*0.05))*RUNSPEED*1.7 - a.vx)*0.2;   // keep drifting forward through the warp
+    const hoverY = GROUND_Y - 40 - a.floatBias - Math.sin((time+a.lag)*0.06)*5;
+    a.x += a.vx; a.y += (hoverY-a.y)*0.06; a.vy=0; a.onGround=false; a.face=1; a.act="idle"; a.actT=0; a.animT=0;
+    if(a.x<8) a.x=8; return;
   }
   a.jumpCd--;
   if(a.controlled && !finished){
@@ -797,7 +840,7 @@ function drawTruck(o){
   // wheels (bosses draw as the war rig and return earlier, so they never reach here)
   wheel(sx-bw/2+6,bb,o.wheel); wheel(sx+bw/2-7,bb,o.wheel);
   // battle progress bar
-  if(o.phase==="battle"){ const p=Math.max(0,1-o.timer/o.dur), w=bw-4;   // health: starts full, decays to zero
+  if(o.phase==="battle"){ const p=Math.max(0,Math.min(1,o.hp!=null?o.hp:1)), w=bw-4;   // time-to-close (resolves) or work-stint (open)
     const col=p>0.5?"#6fd08a":p>0.25?"#e6c36a":"#e04a4a"; px(sx-w/2,ct-6,w,3,"#2a141a"); px(sx-w/2,ct-6,w*p,3,col); }
   // unresolved marker
   if(unresolved){ px(sx-7,ct-8,14,7,"rgba(20,12,6,0.85)"); g.fillStyle="#e6c36a"; g.font="6px 'Courier New',monospace"; g.textAlign="center";
@@ -941,6 +984,9 @@ function drawHUD(){
     g.textAlign="left"; g.globalAlpha=1; }
 }
 
+// faint static calendar grid behind the action -- spacing = the project's rhythm
+function drawDayLines(){ if(!DAYLINES.length) return; g.globalAlpha=0.12; g.fillStyle="#86a6b8";
+  for(const wx of DAYLINES){ const x=(wx-camX)|0; if(x<-1||x>W) continue; for(let yy=2; yy<H; yy+=6) g.fillRect(x,yy,1,2); } g.globalAlpha=1; }
 // a skipped quiet stretch, collapsed to a narrow slice: dashed brackets over a dimmed band, gap labelled
 function dashV(x,col){ g.fillStyle=col; const xi=x|0; for(let yy=(time>>1)%8; yy<H; yy+=8) g.fillRect(xi,yy,1,5); }   // dashes drift downward
 function drawSeams(){ for(const s of SKIPS){ let x0=s.x0-camX, x1=s.x1-camX; if(x1<x0+TS) x1=x0+TS;   // never thinner than one ground block
@@ -957,6 +1003,7 @@ function render(){
   const ox=shake>0?(Math.random()*2-1)*shake:0, oy=shake>0?(Math.random()*2-1)*shake:0;
   g.translate(Math.round(ox),Math.round(oy));
   drawGround();
+  drawDayLines();
   for(const sp of splats){ const x=sp.x-camX; if(x<-10||x>W+10)continue; const y=GROUND_Y-camY-2;
     g.globalAlpha=0.8; g.fillStyle=sp.c; px(x-sp.s,y,sp.s*2,2); px(x-sp.s*0.6,y-1,sp.s,1); px(x+sp.s*0.3,y+1,2,1); g.globalAlpha=1; }
   drawPlatforms();
