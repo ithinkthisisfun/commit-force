@@ -22,8 +22,10 @@
 <style>
   :root{ --red:#c92b2b; --red2:#e04a4a; --ink:#e7b7bd; --panel:#1a0e12; }
   *{ box-sizing:border-box; }
-  html,body{ margin:0; height:100%; background:#0a0608; color:var(--ink);
-    font-family:"Courier New",monospace; display:flex; align-items:center; justify-content:center; }
+  html,body{ margin:0; background:#0a0608; color:var(--ink); font-family:"Courier New",monospace; }
+  /* min-height (not fixed height) so a tall card grows the page and SCROLLS instead of clipping the
+     logo off the top -- flex-centering a fixed-height body pushes overflow past the top edge on phones */
+  body{ min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px 0; }
   #card{ position:relative; z-index:1; width:min(560px,92vw); background:var(--panel); border:3px solid #2a1015;
     box-shadow:0 0 0 3px #000, 0 0 60px #000 inset; padding:26px 26px 22px; }
   h1{ margin:0 0 2px; font-size:37px; letter-spacing:3px; color:var(--red); text-shadow:3px 3px 0 #000, 0 0 18px rgba(201,43,43,.5); }
@@ -36,7 +38,17 @@
   #bg{ position:fixed; inset:0; width:100%; height:100%; border:0; opacity:.82; filter:saturate(1) brightness(.95); pointer-events:none; z-index:0; }
   #veil{ position:fixed; inset:0; background:rgba(10,6,8,.28); pointer-events:none; z-index:0; }
   .row{ display:flex; gap:12px; } .row>div{ flex:1; }
-  @media (max-width:480px){ .row{ flex-direction:column; gap:8px; } }   /* stack the date pickers on phones */
+  @media (max-width:480px){                                    /* tighten everything so it fits a phone (logo included) */
+    .row{ flex-direction:column; gap:8px; }                    /* stack the date pickers */
+    #card{ padding:18px 16px 16px; }
+    h1{ font-size:29px; letter-spacing:2px; }
+    .sub{ margin:0 0 11px; font-size:10px; letter-spacing:1px; }
+    label{ margin:9px 0 4px; }
+    input,select{ padding:9px 10px; font-size:15px; }
+    button{ margin-top:14px; padding:11px; }
+    #suggest{ margin-top:5px; }
+    .note{ margin-top:8px; font-size:10px; line-height:1.4; }
+  }
   small{ color:#c7b3b8; font-size:10px; } small a{ color:#c7b3b8; }
   #suggest{ margin-top:7px; font-size:12px; padding:8px 10px; color:#c7b3b8; }
   #suggest option{ color:#ffd; }
@@ -97,9 +109,8 @@
   <div id="statusrow"><span id="status"></span><span id="spin"></span></div>
   <div id="err"></div>
   <div id="warn"></div>
-  <div class="note">GitHub allows ~60 requests/hour per IP (a few builds); if you hit that, wait a few minutes. Source is <a href="https://github.com/ithinkthisisfun/commit-force" target="_blank" rel="noreferrer">public on GitHub</a>.</div>
+  <div class="note">~60 GitHub requests/hr per IP — a few builds. Rate-limited? <a href="https://github.com/ithinkthisisfun/commit-force#run-locally-for-5000hr" target="_blank" rel="noreferrer">Run it locally</a> for 5000/hr. <a href="https://github.com/ithinkthisisfun/commit-force" target="_blank" rel="noreferrer">Source</a>.</div>
   <div class="note">Got a saved level? <a href="#" id="loadlink">Load a .json file</a> to replay it without touching GitHub.</div>
-  <div class="note">Rate-limited (60/hr)? <a href="https://github.com/ithinkthisisfun/commit-force#run-locally-for-5000hr" target="_blank" rel="noreferrer">Run it locally</a> for 5000/hr — drop a read-only token into <code>local-token.js</code> (never deployed; stays on your machine).</div>
   <input id="loadfile" type="file" accept=".json,application/json" hidden>
 </div>
 
