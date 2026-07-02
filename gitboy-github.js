@@ -19,7 +19,14 @@ async function gh(path, token) {
     throw new Error("GitHub returned 403 (forbidden) — likely the public rate limit; try again shortly.");
   }
   if (res.status === 404) throw new Error("Repo not found (or private).");
-  if (!res.ok) throw new Error("GitHub error " + res.status);
+  if (!res.ok) {                                             // surface GitHub's own reason (422 = "Validation Failed", etc.)
+    let msg = "GitHub error " + res.status;
+    try { const b = await res.json();
+      if (b && b.message) msg += " — " + b.message;
+      if (b && Array.isArray(b.errors) && b.errors.length) msg += " (" + b.errors.map(x => x.message || (x.field ? `${x.resource || ""}.${x.field}: ${x.code}` : x.code) || "").filter(Boolean).join("; ") + ")";
+    } catch {}
+    throw new Error(msg);
+  }
   return res.json();
 }
 export class RateLimitError extends Error {
