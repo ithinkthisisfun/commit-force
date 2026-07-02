@@ -348,7 +348,8 @@ const actors=LV.heroes.map((h,i)=>({ hero:h,id:h.id,name:h.name,pal:h.pal,real:h
 const lead=actors.find(a=>a.id===LV.lead)||actors[0];
 
 let anchorX=START_X, mode="auto", camX=0, shake=0, time=0;
-let finished=false, finishT=0, thrown=0, starPtr=0;
+let finished=false, finishT=0, thrown=0, starPtr=0, starQueue=[];
+const STAR_RATE=5;   // commits flung per frame -> a steady shower whatever the local density (no deluge)
 let resolved=0, oBattled=0, oIdle=0, prMerged=0, prRejected=0;
 let fx=[], stars=[], cards=[], planesActive=[], missiles=[], splats=[], lastEvent="";
 let tickerText="", tickerCol="#e7d7c0", tickerHold=0, lastOoh=0, banner="", bannerT=0, zoom=1;
@@ -543,10 +544,13 @@ function update(){
 
   // ---- commit stars flung off the front runner ----
   const fh=runners.length?runners.reduce((p,q)=>q.x>p.x?q:p,runners[0]):actors[0];
+  // queue commits as the front passes them, then fling at a STEADY rate -- a dense burst becomes a
+  // sustained shower instead of a one-frame dump, so the shower speed stays constant (and no deluge)
+  while(starPtr<STARS_SRC.length && STARS_SRC[starPtr].x<=frontX){ const src=STARS_SRC[starPtr]; joinEvent(src.login); starQueue.push(src); starPtr++; thrown++; }
   let spawned=0, lastCommit=null;
-  while(starPtr<STARS_SRC.length && STARS_SRC[starPtr].x<=frontX){ const src=STARS_SRC[starPtr]; if(spawned<18) flingStar(fh,src); joinEvent(src.login); lastCommit=src; starPtr++; thrown++; spawned++; }
-  if(spawned>=6 && time-lastOoh>90){ SFX.ooh(); lastOoh=time; }    // a shower of commits -> "ooh"
-  if(lastCommit && tickerHold<=0){ tickerText=lastCommit.sha+"  "+(lastCommit.msg||""); tickerCol=lastCommit.bot?"#9fe0ff":"#cbb98a"; }  // HUD names the accepted commit (one per frame)
+  while(starQueue.length && spawned<STAR_RATE){ const src=starQueue.shift(); flingStar(fh,src); lastCommit=src; spawned++; }
+  if(starQueue.length>12 && time-lastOoh>90){ SFX.ooh(); lastOoh=time; }    // a big backlog of commits -> "ooh"
+  if(lastCommit && tickerHold<=0){ tickerText=lastCommit.sha+"  "+(lastCommit.msg||""); tickerCol=lastCommit.bot?"#9fe0ff":"#cbb98a"; }  // HUD names the accepted commit
   if(tickerHold>0) tickerHold--;
 
   // ---- dispatch trucks (in timeline order) ----
@@ -730,7 +734,7 @@ function reset(){ for(const k in pressed) delete pressed[k];   // else 'r' stays
   OBS.forEach(initTruck); actors.forEach((a,i)=>{ a.x=START_X-40-i*16; a.y=GROUND_Y; a.vx=a.vy=0; a.act="idle"; a.controlled=false; a.riding=null; a.rideSlot=0; });
   PLANES.forEach(p=>p.launched=false); RELEASES.forEach(r=>{ r.hit=false; r.raise=0; });
   endStage="run"; safe=null; safeShots=[]; finishFlagX=0; flagRaise=0; joins=[]; seenNames.clear();
-  anchorX=START_X; mode="auto"; finished=false; finishT=0; camX=0; thrown=0; starPtr=0; resolved=oBattled=oIdle=0; prMerged=prRejected=0;
+  anchorX=START_X; mode="auto"; finished=false; finishT=0; camX=0; thrown=0; starPtr=0; starQueue=[]; resolved=oBattled=oIdle=0; prMerged=prRejected=0;
   fx=[]; stars=[]; cards=[]; planesActive=[]; missiles=[]; splats=[]; fireRockets=[]; fireParts=[]; fwTimer=0; lastEvent=""; tickerText=""; tickerHold=0; lastOoh=0; banner=""; bannerT=0; zoom=1;
   parade=[]; paradeQueue=[]; paradeOn=false; paradeTick=0;
   curDateMs=null; timeFlash=0; skipText=""; skipSub=""; skipT=0;

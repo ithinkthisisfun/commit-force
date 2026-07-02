@@ -85,10 +85,13 @@
   <label>COMMIT BRANCH <span class="help" data-help="Stars are the commits from ONE branch. Pick the branch where the work happened — otherwise a repo whose activity lived on a side branch shows no stars at all. Issues and PRs are repo-wide, so they're unaffected.">?</span></label>
   <select id="branch" disabled><option>—</option></select>
 
-  <div class="row">
-    <div><label>ISSUES <span class="help" data-help="Max issues to pull.">?</span></label><input id="limit" type="number" value="80" min="10" max="200"></div>
-    <div><label>COMMITS <span class="help" data-help="Max commits to pull.">?</span></label><input id="commits" type="number" value="400" min="0" max="2000" step="100"></div>
-  </div>
+  <label>TIME RANGE <span class="help" data-help="How far back to read. A tighter range shows EVERY issue/PR/commit in it; a wide range on a very busy repo hits the caps (500 commits / 150 issues / 150 PRs) and only shows the newest slice — the picker warns you first.">?</span></label>
+  <select id="range">
+    <option value="30">Last month</option>
+    <option value="90">Last 3 months</option>
+    <option value="180">Last 6 months</option>
+    <option value="365" selected>Last year</option>
+  </select>
 
   <button id="go">GO</button>
   <div id="bar"><div id="fill"></div></div>
@@ -101,10 +104,10 @@
 </div>
 
 <script type="module">
-import { buildLevelFromGitHub, checkRepo, getBranches, getCounts, getSuggestedRepos, RateLimitError } from "./gitboy-github.js";
+import { buildLevelFromGitHub, checkRepo, getBranches, getCounts, getSuggestedRepos, windowCounts, CAPS, RateLimitError } from "./gitboy-github.js";
 import { normalizeRepo } from "./gitboy-core.js";
 const $ = id => document.getElementById(id);
-const repo=$("repo"), go=$("go"), bar=$("bar"), fill=$("fill"), status=$("status"), err=$("err"), check=$("check");
+const repo=$("repo"), go=$("go"), bar=$("bar"), fill=$("fill"), status=$("status"), err=$("err"), check=$("check"), rangeSel=$("range");
 // suggested-repos dropdown: seed with solid picks (works even when rate-limited), then
 // fill from the Search API's "trending" (most-starred repos created recently)
 const suggest = $("suggest");
@@ -123,8 +126,6 @@ repo.value = sessionStorage.getItem("gitboy_lastrepo") || "";
 let autoShare = null;
 { const q = new URLSearchParams(location.search); const qr = (q.get("repo") || "").trim();
   if (qr) { repo.value = qr;
-    if (q.get("issues")) $("limit").value = q.get("issues");
-    if (q.get("commits") != null) $("commits").value = q.get("commits");
     autoShare = { branch: (q.get("branch") || "").trim() }; } }
 // pull a branch out of a pasted /tree/<branch> URL (branch names may contain slashes)
 const branchHint = s => { const m = (s || "").match(/github\.com[/:][^/]+\/[^/]+\/tree\/([^?#]+)/i); return m ? decodeURIComponent(m[1].replace(/\/+$/, "")) : ""; };
@@ -147,14 +148,14 @@ document.addEventListener("click", () => { tip.style.display = "none"; });
 // "loading branches…", default-select the default branch -> enable GO. Issue/PR counts load
 // in the background afterward and never gate GO. Rate-limit hits are reported under GO.
 const branchSel = $("branch"), spin = $("spin");
-let repoOk = false, branchesOk = false, checkSeq = 0;
+let repoOk = false, branchesOk = false, checkSeq = 0, sizeOverride = false;
 const setGo = () => { go.disabled = !(repoOk && branchesOk); };
 go.disabled = true;
 const rateMsg = e => `⏳ GitHub rate limit hit (60/hr) — try again in ~${Math.max(1, Math.round((e.resetMs - Date.now()) / 60000))} min`;
 async function doCheck() {
   const auto = autoShare; autoShare = null;   // one-shot: a shared ?repo= link auto-plays on success
   const norm = normalizeRepo(repo.value.trim());
-  repoOk = branchesOk = false; setGo();
+  repoOk = branchesOk = false; sizeOverride = false; go.textContent = "GO"; setGo();
   branchSel.innerHTML = ""; branchSel.disabled = true; err.textContent = ""; $("warn").textContent = "";
   if (!norm.includes("/") || norm.split("/").some(p => !p)) { spin.style.display = "none"; status.textContent = repo.value.trim() ? "enter a repo as owner/name" : ""; return; }
   const my = ++checkSeq;
@@ -205,14 +206,10 @@ async function doCheck() {
 }
 check.onclick = doCheck;
 // the shareable query, built from the current form selections (repo/branch/counts)
-const $limit = $("limit"), $commits = $("commits");
 function shareParams() {
   const r = normalizeRepo(repo.value.trim()); const p = new URLSearchParams();
   if (r.includes("/")) { p.set("repo", r);
-    if (branchesOk && branchSel.value && !branchSel.disabled) p.set("branch", branchSel.value);
-    const lim = ($limit.value || "").trim(), com = ($commits.value || "").trim();
-    if (lim && lim !== "80") p.set("issues", lim);
-    if (com && com !== "400") p.set("commits", com); }
+    if (branchesOk && branchSel.value && !branchSel.disabled) p.set("branch", branchSel.value); }
   return p;
 }
 // keep the address-bar URL in sync with the selections, so the PHONE's own Share
@@ -224,9 +221,8 @@ function syncUrl() {
   // iOS Safari's Share sheet reads og:url, not the address bar — keep it current too
   if (ogUrl) ogUrl.setAttribute("content", location.origin + path);
 }
-$limit.addEventListener("input", syncUrl);
-$commits.addEventListener("input", syncUrl);
-branchSel.addEventListener("change", syncUrl);
+branchSel.addEventListener("change", () => { sizeOverride = false; if (!busy) go.textContent = "GO"; syncUrl(); });
+rangeSel.addEventListener("change", () => { sizeOverride = false; if (!busy) go.textContent = "GO"; $("warn").textContent = ""; });
 
 // top-right in-app share icon: native share sheet (or clipboard) with these options
 const shareTip = $("shareTip");
@@ -245,7 +241,7 @@ $("shareTop").onclick = async () => {
 };
 // typing a new repo invalidates the current lookup (cheap, no network) — re-run with ›
 repo.addEventListener("input", () => {
-  repoOk = branchesOk = false; setGo();
+  repoOk = branchesOk = false; sizeOverride = false; go.textContent = "GO"; setGo();
   branchSel.innerHTML = ""; branchSel.disabled = true; err.textContent = ""; $("warn").textContent = "";
   status.textContent = repo.value.trim() ? "press › to look up" : "";
   syncUrl();
@@ -255,11 +251,28 @@ if (repo.value.trim()) doCheck();
 let busy = false;
 async function start(){
   if (busy || !(repoOk && branchesOk)) return;
-  const r = repo.value.trim(); err.textContent = "";
-  busy = true; go.disabled = true; go.textContent = "LOADING…"; bar.style.display = "block"; fill.style.width = "3%"; status.textContent = "contacting github…";
+  const r = repo.value.trim(), windowDays = +rangeSel.value || 365; err.textContent = "";
+  // size gate: how much does the picked range hold? Over the caps -> recommend a tighter range first.
+  if (!sizeOverride) {
+    busy = true; go.disabled = true; go.textContent = "CHECKING…"; $("warn").textContent = ""; status.textContent = "checking size…"; spin.style.display = "inline-block";
+    let c;
+    try { c = await windowCounts(r, windowDays, branchSel.value); }
+    catch (e) { spin.style.display = "none"; busy = false; go.disabled = false; go.textContent = "GO"; status.textContent = "";
+      err.textContent = (e instanceof RateLimitError) ? rateMsg(e) : "✕ " + (e.message || e); return; }
+    spin.style.display = "none"; busy = false; go.disabled = false;
+    const over = [];
+    if (c.commits != null && c.commits > CAPS.commits) over.push(c.commits.toLocaleString() + " commits");
+    if (c.issues  != null && c.issues  > CAPS.issues)  over.push(c.issues.toLocaleString()  + " issues");
+    if (c.prs     != null && c.prs     > CAPS.prs)     over.push(c.prs.toLocaleString()     + " PRs");
+    if (over.length) {
+      $("warn").textContent = "⚠ " + over.join(" · ") + " in this range — over the caps (" + CAPS.commits + " commits / " + CAPS.issues + " issues / " + CAPS.prs + " PRs). Tighten the range to see it ALL, or hit GO again to build the newest slice.";
+      status.textContent = ""; sizeOverride = true; go.textContent = "GO ANYWAY"; return;
+    }
+  }
+  busy = true; go.disabled = true; go.textContent = "LOADING…"; $("warn").textContent = ""; bar.style.display = "block"; fill.style.width = "3%"; status.textContent = "contacting github…";
   try {
     const level = await buildLevelFromGitHub(r, {
-      branch: branchSel.value, limit: +($("limit").value || 80), commits: +($("commits").value || 400),
+      branch: branchSel.value, windowDays,
       onProgress: (p, m) => { fill.style.width = Math.max(3, p) + "%"; if (m) status.textContent = m; },
     });
     sessionStorage.setItem("gitboy_lastrepo", level.repo);
@@ -277,7 +290,7 @@ async function start(){
     reset();
   }
 }
-function reset(){ busy = false; go.disabled = !(repoOk && branchesOk); go.textContent = "GO"; }
+function reset(){ busy = false; go.disabled = !(repoOk && branchesOk); go.textContent = sizeOverride ? "GO ANYWAY" : "GO"; }
 
 // load a saved level file straight into the player -- bypasses GitHub entirely
 const loadfile = $("loadfile"), loadlink = $("loadlink");

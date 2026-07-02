@@ -49,78 +49,27 @@ function difficulty(issue, now) {
   return Math.max(1, Math.min(3, 1 + Math.floor(s / 1.5)));
 }
 
-export function assembleLevel(repo, { issues = [], prs = [], commits = [], releases = [], realOpen = 0, realClosed = 0 } = {}) {
+export function assembleLevel(repo, { issues = [], prs = [], commits = [], releases = [], windowDays = 365 } = {}) {
   repo = normalizeRepo(repo);
   const now = Date.now();
 
-  // Every issue/PR ACTIVITY event seeds the timeline: opened, closed, or merged. Closing an issue
-  // is activity too, so a stretch is only "dead" (collapsible to a warp) when nothing happened in
-  // it at all -- no opens AND no closes. Trucks still appear at their OPEN date; the close knots
-  // just keep resolutions from being buried inside a warp.
-  const closeMs = [
-    ...issues.filter(i => i.closedAt).map(i => new Date(i.closedAt).getTime()),
-    ...prs.map(p => p.mergedAt || p.closedAt).filter(Boolean).map(d => new Date(d).getTime()),
-  ];
-  const closeSet = new Set(closeMs);
-  const workEpochs = [...new Set([
+  // Windowed, linear timeline: anchor on the newest activity and look back one year, positioning
+  // everything linearly by real date -- no time-warping. An issue created before the window but still
+  // active in it (kept because we fetch by last-updated) clamps to the window start: "already open
+  // when the year began," and still resolves at its real close date if it closed during the year.
+  const WINDOW = windowDays * DAY;
+  const dates = [
     ...issues.map(i => new Date(i.createdAt).getTime()),
+    ...issues.filter(i => i.closedAt).map(i => new Date(i.closedAt).getTime()),
     ...prs.map(p => new Date(p.createdAt).getTime()),
-    ...closeMs,
-  ])].sort((a, b) => a - b);
-  const allEpochs = [...workEpochs, ...commits.map(c => new Date(c.date).getTime())];
-  const t0 = workEpochs.length ? workEpochs[0] : (allEpochs.length ? Math.min(...allEpochs) : now);
-  const t1 = workEpochs.length ? workEpochs[workEpochs.length - 1] : (allEpochs.length ? Math.max(...allEpochs) : now);
+    ...prs.map(p => p.mergedAt || p.closedAt).filter(Boolean).map(d => new Date(d).getTime()),
+    ...commits.filter(c => c.date).map(c => new Date(c.date).getTime()),
+  ].filter(n => Number.isFinite(n));
+  const t1 = dates.length ? Math.max(...dates) : now;
+  const t0 = t1 - WINDOW;
   const span = Math.max(1, t1 - t0);
-  let frac, timeline;
-  if (workEpochs.length < 2) {
-    frac = ms => (ms - t0) / span;
-    timeline = { breaks: [{ t: 0, ms: t0 }, { t: 1, ms: t1 }], skips: [] };
-  } else {
-    const ev = workEpochs;
-    const gaps = []; for (let i = 1; i < ev.length; i++) gaps.push(ev[i] - ev[i - 1]);
-    const med = [...gaps].sort((a, b) => a - b)[gaps.length >> 1] || DAY;
-    const CAP = Math.max(3 * DAY, med * 4);
-    // gaps longer than CAP are "skips" (a quiet stretch). Normal gaps keep their real (sub-CAP)
-    // width on the axis, but each skip collapses to a tiny fixed SEAM so a multi-year silence
-    // becomes ~one ground-block of track -- the player brackets it with dashed lines instead of
-    // making you run across dead space. SEAM scales with the non-skip span so the seam stays
-    // ~1-2 blocks wide on the default track length no matter how busy the repo is.
-    let base = 0;
-    for (let i = 1; i < ev.length; i++) { const gap = ev[i] - ev[i - 1]; if (gap <= CAP) base += gap; }
-    const SEAM = Math.max(HOUR, base * 0.0018);
-    const wid = [0]; for (let i = 1; i < ev.length; i++) { const gap = ev[i] - ev[i - 1]; wid[i] = gap > CAP ? SEAM : gap; }
-    const C = [0]; for (let i = 1; i < ev.length; i++) C[i] = C[i - 1] + wid[i];
-    const totalC = C[C.length - 1] || 1;
-    frac = x => {
-      if (x <= ev[0]) return 0;
-      if (x >= ev[ev.length - 1]) return 1;
-      let lo = 0, hi = ev.length - 1;
-      while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (ev[m] <= x) lo = m; else hi = m; }
-      const seg = ev[hi] - ev[lo], f = seg > 0 ? (x - ev[lo]) / seg : 0;
-      return (C[lo] + f * wid[hi]) / totalC;
-    };
-    // timeline metadata for playback: `breaks` are knots mapping track position (t) -> real time
-    // (ms), so the player can show a live date; `skips` are the gaps that got clamped (realGap >
-    // CAP) -- the player flashes as the runner crosses one, since a lot of real time passes there
-    // in very little track. The map is piecewise-linear between knots, exactly inverting frac().
-    // Seams (the dashed "time skipped" brackets) mark only real silences: a gap must exceed CAP
-    // AND be at least SEAM_MIN, so brief lulls just compress without fanfare. Runs of skips at
-    // consecutive gap indices -- isolated ancient events (e.g. a repo's most-discussed issues,
-    // each alone in time) flanked by huge gaps -- coalesce into ONE seam spanning the whole era,
-    // instead of a picket fence of back-to-back brackets.
-    const SEAM_MIN = 30 * DAY;
-    timeline = { breaks: ev.map((ms, i) => ({ t: C[i] / totalC, ms })), skips: [] };
-    let lastIdx = -2;
-    for (let i = 1; i < ev.length; i++) {
-      const gap = ev[i] - ev[i - 1];
-      if (!(gap > CAP && gap >= SEAM_MIN)) continue;
-      // extend the previous seam only across an isolated OPEN; a close between two dead gaps is real
-      // activity, so it stays a boundary (the two stay separate seams) rather than being swallowed.
-      if (i === lastIdx + 1 && !closeSet.has(ev[i - 1])) { const m = timeline.skips[timeline.skips.length - 1]; m.t1 = C[i] / totalC; m.to = ev[i]; m.gapDays = Math.round((m.to - m.from) / DAY); }
-      else timeline.skips.push({ t0: C[i - 1] / totalC, t1: C[i] / totalC, from: ev[i - 1], to: ev[i], gapDays: Math.round(gap / DAY) });
-      lastIdx = i;
-    }
-  }
+  const frac = ms => Math.max(0, Math.min(1, (ms - t0) / span));   // linear, clamped into the window
+  const timeline = { breaks: [{ t: 0, ms: t0 }, { t: 1, ms: t1 }], skips: [] };
 
   const obstacles = issues.map(issue => {
     const closedState = (issue.state || "").toLowerCase() === "closed";
@@ -169,11 +118,18 @@ export function assembleLevel(repo, { issues = [], prs = [], commits = [], relea
     .map(r => ({ tag: r.tag, name: r.name || r.tag, pre: !!r.pre, t: frac(r.ms) }))
     .sort((a, b) => a.t - b.t);
 
-  // the boss is the most-discussed issue, PERIOD (open or closed). If it never closed, the rig escapes
-  // in-game ("we didn't blow it up last sprint...") -- see the flee/boom split in play.html.
-  let boss = null;
-  for (const o of obstacles) if (!boss || o.comments > boss.comments) boss = o;
-  if (boss && boss.comments >= 2) boss.boss = true;
+  // Boss = the "hottest" issue, Reddit-style: discussion (comments, log-scaled like upvotes) balanced
+  // against age, so the boss is a RECENT contentious issue that lands as a late-level climax instead of
+  // an ancient marathon thread buried back in a warp. Raising BOSS_RECENCY_W favors recency over volume.
+  // (Open bosses still flee, closed bosses still blow up -- see the split in play.html.)
+  const BOSS_RECENCY_W = 2;
+  let boss = null, bossScore = -Infinity;
+  for (const o of obstacles) {
+    if (o.comments < 2) continue;
+    const s = Math.log10(o.comments + 1) + BOSS_RECENCY_W * o.t;   // o.t is the clamped, linear recency (0 = window start .. 1 = newest)
+    if (s > bossScore) { bossScore = s; boss = o; }
+  }
+  if (boss) boss.boss = true;
 
   const closedN = obstacles.filter(o => o.state === "closed").length;
   const openN = obstacles.filter(o => o.state === "open").length;
@@ -186,7 +142,7 @@ export function assembleLevel(repo, { issues = [], prs = [], commits = [], relea
       total: obstacles.length, closed: closedN, open: openN, openActive: openActiveN, idle: openN - openActiveN,
       commits: stars.length, bots: stars.filter(s => s.bot).length,
       prs: planes.length, prMerged: planes.filter(p => p.state === "merged").length, prRejected: planes.filter(p => p.state === "rejected").length,
-      releases: rel.length, realOpen, realClosed,
+      releases: rel.length,
     },
     heroes, lead, obstacles, stars, planes, releases: rel, timeline,
   };

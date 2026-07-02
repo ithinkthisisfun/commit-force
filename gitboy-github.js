@@ -39,10 +39,20 @@ async function paged(pathBase, token, max, onPage) {
   }
   return out.slice(0, max);
 }
-async function count(repo, state, token) {
-  const q = encodeURIComponent(`repo:${repo} type:issue state:${state}`);
-  const j = await gh(`/search/issues?q=${q}&per_page=1`, token);
-  return j.total_count || 0;
+// page a newest-first list, stopping once items fall before `cutoff` (or `max` is reached).
+// `dateOf` picks the field the list is sorted by (updated_at), so we keep anything touched in-window.
+async function pagedWindow(pathBase, token, max, cutoff, dateOf, onPage) {
+  const per = 100, out = [];
+  for (let page = 1; out.length < max; page++) {
+    const sep = pathBase.includes("?") ? "&" : "?";
+    const arr = await gh(`${pathBase}${sep}per_page=${per}&page=${page}`, token);
+    if (!Array.isArray(arr) || arr.length === 0) break;
+    let hitOld = false;
+    for (const it of arr) { if (dateOf(it) < cutoff) { hitOld = true; break; } out.push(it); if (out.length >= max) break; }
+    if (onPage) onPage(out.length);
+    if (hitOld || arr.length < per || out.length >= max) break;
+  }
+  return out;
 }
 async function searchTotal(repo, qextra, token) {
   const j = await gh(`/search/issues?q=${encodeURIComponent(`repo:${repo} ${qextra}`)}&per_page=1`, token);
@@ -71,6 +81,36 @@ export async function getCounts(repoRaw, token = "") {
   try { issues = await searchTotal(repo, "type:issue", token); prs = await searchTotal(repo, "type:pr", token); } catch (e) { if (e instanceof RateLimitError) throw e; }
   return { issues, prs };
 }
+// exact count via the pagination trick: per_page=1 -> the Link header's rel="last" page number IS the total.
+async function pageCount(path, token) {
+  const sep = path.includes("?") ? "&" : "?";
+  const res = await fetch(`${API}${path}${sep}per_page=1`, { headers: headers(token) });
+  if (res.status === 403 || res.status === 429) {
+    if (res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(+res.headers.get("x-ratelimit-reset") * 1000);
+    throw new Error("GitHub 403");
+  }
+  if (!res.ok) return null;
+  const m = (res.headers.get("Link") || "").match(/[?&]page=(\d+)>;\s*rel="last"/);
+  if (m) return +m[1];
+  const arr = await res.json();
+  return Array.isArray(arr) ? arr.length : 0;
+}
+// The hard caps a build applies; the picker warns before a range would blow past them.
+export const CAPS = { issues: 150, prs: 150, commits: 500 };
+// How much a time range holds -- cheap (search total_count + the commits Link-header trick), so the
+// picker can warn before building. A field is null on a soft failure (count unknown); rate limits throw.
+export async function windowCounts(repoRaw, windowDays, branch = "", token = "") {
+  const repo = normalizeRepo(repoRaw);
+  const since = new Date(Date.now() - windowDays * 86400000), day = since.toISOString().slice(0, 10);
+  const sha = branch ? `&sha=${encodeURIComponent(branch)}` : "";
+  const soft = e => { if (e instanceof RateLimitError) throw e; return null; };
+  const [issues, prs, commits] = await Promise.all([
+    searchTotal(repo, `type:issue updated:>${day}`, token).catch(soft),
+    searchTotal(repo, `type:pr updated:>${day}`, token).catch(soft),
+    pageCount(`/repos/${repo}/commits?since=${encodeURIComponent(since.toISOString())}${sha}`, token).catch(soft),
+  ]);
+  return { issues, prs, commits };
+}
 // Suggested repos: big, active, established projects with busy issue trackers — the ones
 // that make the richest gauntlets. Highly-starred repos pushed this week, ranked by open
 // help-wanted issues (which filters out the awesome-list/book repos that sort-by-stars
@@ -92,45 +132,26 @@ export async function getRepoInfo(repoRaw, token = "") {
   return { repo, defaultBranch, branches, isPrivate, issues, prs };
 }
 
-// Fetch a repo's data straight from the browser and build a level.
-export async function buildLevelFromGitHub(repoRaw, { token = "", limit = 100, commits = 400, prLimit = 200, branch = "", onProgress = () => {} } = {}) {
+// Fetch a repo's chosen window of activity (windowDays, default a year) and build a level. Everything is
+// windowed by last-updated (so an old issue that's still being discussed stays in) and capped hard --
+// no counting, no most-discussed fold-in. The core positions it all linearly, with no time-warps.
+export async function buildLevelFromGitHub(repoRaw, { token = "", branch = "", windowDays = 365, onProgress = () => {} } = {}) {
   const repo = normalizeRepo(repoRaw);
   if (!repo.includes("/")) throw new Error("enter a repo as owner/name");
+  const cutoff = Date.now() - windowDays * 86400000, cutoffISO = new Date(cutoff).toISOString();
+  const updatedOf = x => new Date(x.updated_at || x.created_at).getTime();
 
-  onProgress(3, "counting issues…");
-  let realOpen = 0, realClosed = 0;
-  try { realOpen = await count(repo, "open", token); realClosed = await count(repo, "closed", token); } catch (e) { if (e instanceof RateLimitError) throw e; }
-  const budget = limit * 2;
-  let openLim = limit, closedLim = limit;
-  if (realOpen + realClosed > 0) {
-    openLim = Math.max(5, Math.min(budget - 5, Math.round(budget * realOpen / (realOpen + realClosed))));
-    closedLim = budget - openLim;
-  }
-
-  // The /issues endpoint returns PRs too — filter them out with .pull_request.
-  onProgress(8, "reading open issues…");
-  const openRaw = await paged(`/repos/${repo}/issues?state=open&sort=created&direction=desc`, token, openLim + 40);
-  onProgress(18, "reading closed issues…");
-  const closedRaw = await paged(`/repos/${repo}/issues?state=closed&sort=created&direction=desc`, token, closedLim + 40);
+  // The /issues endpoint returns PRs too — filter them out with .pull_request. `since` filters by
+  // last-updated server-side; pagedWindow stops as soon as we page past the window.
+  onProgress(8, "reading recent issues…");
+  const issuesRaw = await pagedWindow(`/repos/${repo}/issues?state=all&sort=updated&direction=desc&since=${encodeURIComponent(cutoffISO)}`,
+    token, CAPS.issues + 60, cutoff, updatedOf, n => onProgress(8 + Math.min(20, n / CAPS.issues * 20), `reading issues… ${n}`));
   const mapIssue = i => ({ number: i.number, title: i.title, url: i.html_url, state: i.state, labels: i.labels || [],
     author: i.user ? { login: i.user.login } : null, comments: i.comments, createdAt: i.created_at, updatedAt: i.updated_at, closedAt: i.closed_at });
-  const issues = [
-    ...openRaw.filter(i => !i.pull_request).slice(0, openLim).map(mapIssue),
-    ...closedRaw.filter(i => !i.pull_request).slice(0, closedLim).map(mapIssue),
-  ];
-
-  // The sample above is newest-first, and recent issues are often thinly commented — so on
-  // some repos nothing clears the boss bar. Pull the repo's most-DISCUSSED issues (open OR
-  // closed) and fold them in, so the boss (= most-commented issue, period) is always present.
-  onProgress(28, "reading most-discussed…");
-  try {
-    const hotRes = await gh(`/search/issues?q=${encodeURIComponent(`repo:${repo} type:issue`)}&sort=comments&order=desc&per_page=8`, token);
-    const seen = new Set(issues.map(i => i.number));
-    for (const i of (hotRes.items || [])) if (!i.pull_request && !seen.has(i.number)) { issues.push(mapIssue(i)); seen.add(i.number); }
-  } catch (e) { if (e instanceof RateLimitError) throw e; }
+  const issues = issuesRaw.filter(i => !i.pull_request).slice(0, CAPS.issues).map(mapIssue);
 
   onProgress(34, "reading pull requests…");
-  const prsRaw = await paged(`/repos/${repo}/pulls?state=all&sort=created&direction=desc`, token, prLimit);
+  const prsRaw = await pagedWindow(`/repos/${repo}/pulls?state=all&sort=updated&direction=desc`, token, CAPS.prs, cutoff, updatedOf);
   const prs = prsRaw.map(p => ({ number: p.number, title: p.title, state: p.state, author: p.user ? { login: p.user.login } : null,
     createdAt: p.created_at, closedAt: p.closed_at, mergedAt: p.merged_at }));
 
@@ -141,15 +162,13 @@ export async function buildLevelFromGitHub(repoRaw, { token = "", limit = 100, c
     releases = rel.map(r => ({ tag: r.tag_name, name: r.name, pre: r.prerelease, publishedAt: r.published_at }));
   } catch (e) { if (e instanceof RateLimitError) throw e; }
 
-  // Commits are optional garnish (the star shower). By the time we get here the essential
-  // data (trucks, planes) is already loaded, so ANY failure here — a transient 404 or even
-  // hitting the rate limit — just skips the stars and reports why, rather than discarding
-  // the whole build.
+  // Commits are optional garnish (the star shower); `since` windows them by commit date. ANY failure
+  // here just skips the stars and reports why, rather than discarding the whole build.
   onProgress(58, "reading commits…");
   let commitList = [], commitError = null;
   try {
-    const commitsPath = `/repos/${repo}/commits${branch ? `?sha=${encodeURIComponent(branch)}` : ""}`;
-    const comRaw = await paged(commitsPath, token, commits, n => onProgress(58 + Math.min(30, n / commits * 30), `reading commits… ${n}`));
+    const commitsPath = `/repos/${repo}/commits?since=${encodeURIComponent(cutoffISO)}${branch ? `&sha=${encodeURIComponent(branch)}` : ""}`;
+    const comRaw = await paged(commitsPath, token, CAPS.commits, n => onProgress(58 + Math.min(30, n / CAPS.commits * 30), `reading commits… ${n}`));
     commitList = comRaw.map(c => ({ sha: (c.sha || "").slice(0, 7),
       date: c.commit?.author?.date || c.commit?.committer?.date,
       login: (c.author && c.author.login) || c.commit?.author?.name || "?",
@@ -159,7 +178,7 @@ export async function buildLevelFromGitHub(repoRaw, { token = "", limit = 100, c
   }
 
   onProgress(92, "building level…");
-  const level = assembleLevel(repo, { issues, prs, commits: commitList, releases, realOpen, realClosed });
+  const level = assembleLevel(repo, { issues, prs, commits: commitList, releases, windowDays });
   level.branch = branch || "";           // remembered so the game can build a shareable link
   if (commitError) level.commitsError = commitError;
   onProgress(100, "done");
