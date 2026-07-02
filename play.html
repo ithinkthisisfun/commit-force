@@ -593,7 +593,8 @@ function updateActor(a,frontX){
   // ---- riding a truck: pinned on the roof, throwing punches ----
   if(a.riding){
     const o=a.riding, n=o.riders?o.riders.length:1, tx=o.x + ((a.rideSlot||0)-(n-1)/2)*(o.boss?72:12);  // fan riders across the roof (one per tank for the war rig)
-    a.x+=(tx-a.x)*0.45; a.y+=(o.roof-a.y)*0.45; a.vy=0; a.onGround=true; a.face=1;
+    const _dx=tx-a.x; a.x += Math.max(-10, Math.min(10, _dx*0.45));   // slide onto the roof, capped so a far board reads as a leap, not a teleport
+    a.y+=(o.roof-a.y)*0.45; a.vy=0; a.onGround=true; a.face=1;
     if(a.act!=="idle"){ a.actT--; if(a.actT<=0)a.act="idle"; }
     a.animT=0; return;
   }
