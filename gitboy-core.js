@@ -118,14 +118,14 @@ export function assembleLevel(repo, { issues = [], prs = [], commits = [], relea
     .map(r => ({ tag: r.tag, name: r.name || r.tag, pre: !!r.pre, t: frac(r.ms) }))
     .sort((a, b) => a.t - b.t);
 
-  // Boss = the "hottest" issue, Reddit-style: discussion (comments, log-scaled like upvotes) balanced
-  // against age, so the boss is a RECENT contentious issue that lands as a late-level climax instead of
-  // an ancient marathon thread buried back in a warp. Raising BOSS_RECENCY_W favors recency over volume.
-  // (Open bosses still flee, closed bosses still blow up -- see the split in play.html.)
+  // Boss = the hottest CLOSED issue, Reddit-style: discussion (comments, log-scaled like upvotes)
+  // balanced against recency, so it lands as a late-level climax. It MUST be closed -- an open boss
+  // just flees (see play.html), so picking the hottest issue regardless of state meant the boss almost
+  // never died. Closed-only guarantees a real BOSS DEFEATED. Raising BOSS_RECENCY_W favors recency.
   const BOSS_RECENCY_W = 2;
   let boss = null, bossScore = -Infinity;
   for (const o of obstacles) {
-    if (o.comments < 2) continue;
+    if (o.state !== "closed" || o.comments < 2) continue;   // closed-only -> the boss always resolves (dies)
     const s = Math.log10(o.comments + 1) + BOSS_RECENCY_W * o.t;   // o.t is the clamped, linear recency (0 = window start .. 1 = newest)
     if (s > bossScore) { bossScore = s; boss = o; }
   }
