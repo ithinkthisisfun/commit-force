@@ -96,6 +96,8 @@
   <div id="err"></div>
   <div id="warn"></div>
   <div class="note">GitHub allows ~60 requests/hour per IP (a few builds); if you hit that, wait a few minutes. Source is <a href="https://github.com/ithinkthisisfun/commit-force" target="_blank" rel="noreferrer">public on GitHub</a>.</div>
+  <div class="note">Got a saved level? <a href="#" id="loadlink">Load a .json file</a> to replay it without touching GitHub.</div>
+  <input id="loadfile" type="file" accept=".json,application/json" hidden>
 </div>
 
 <script type="module">
@@ -276,6 +278,21 @@ async function start(){
   }
 }
 function reset(){ busy = false; go.disabled = !(repoOk && branchesOk); go.textContent = "GO"; }
+
+// load a saved level file straight into the player -- bypasses GitHub entirely
+const loadfile = $("loadfile"), loadlink = $("loadlink");
+loadlink.onclick = e => { e.preventDefault(); loadfile.click(); };
+loadfile.onchange = async () => {
+  const f = loadfile.files[0]; if (!f) return; err.textContent = "";
+  try {
+    const level = JSON.parse(await f.text());
+    if (!level || !Array.isArray(level.obstacles) || !Array.isArray(level.heroes) || !level.counts) throw new Error("not a Commit Force level file");
+    sessionStorage.setItem("gitboy_lastrepo", level.repo || "");
+    sessionStorage.setItem("GITBOY_LEVEL", JSON.stringify(level));
+    status.textContent = "loaded " + (level.repo || "level") + " — starting…";
+    location.href = "play.html";
+  } catch (ex) { err.textContent = "✕ " + (ex.message || "could not read that file"); loadfile.value = ""; }
+};
 </script>
 </body>
 </html>

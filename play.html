@@ -13,15 +13,18 @@
   #hint { position:absolute; left:50%; bottom:8px; transform:translateX(-50%); font-size:12px;
     color:#7a3038; letter-spacing:1px; white-space:nowrap; text-shadow:0 1px 0 #000; user-select:none; }
   #hint b { color:#e55; }
-  #share { position:absolute; top:8px; right:8px; z-index:5; font-family:inherit; font-size:11px; letter-spacing:1px;
+  #share, #save { position:absolute; top:8px; z-index:5; font-family:inherit; font-size:11px; letter-spacing:1px;
     padding:6px 11px; background:#2a1015; color:#e7b7bd; border:2px solid #5a2530; cursor:pointer; text-shadow:0 1px 0 #000; }
+  #share { right:8px; } #save { right:92px; }
   #share:hover { background:#c92b2b; color:#fff; border-color:#e04a4a; }
+  #save:hover { background:#2f7fd8; color:#fff; border-color:#4a9ae8; }
   #toast { position:absolute; top:40px; right:8px; z-index:5; font-size:10px; letter-spacing:1px; color:#8fd8a0;
     background:rgba(10,6,8,0.88); padding:4px 8px; opacity:0; transition:opacity .25s; pointer-events:none; white-space:nowrap; }
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="c" width="416" height="234"></canvas></div>
+<button id="save" title="download this level as a file you can replay without GitHub">⤓ SAVE</button>
 <button id="share" title="copy a link that plays this repo">⤴ SHARE</button>
 <div id="toast"></div>
 <div id="hint">
@@ -263,6 +266,18 @@ const LV=bgMode?FALLBACK:(STORED||((window.GITBOY_LEVEL&&!window.__noLevel)?wind
     toast.style.opacity="1"; clearTimeout(btn._t); btn._t=setTimeout(()=>toast.style.opacity="0", ok?1900:6000); };
 })();
 
+// SAVE: download this level as a .json you can replay from the start screen -- no GitHub refetch
+(()=>{ const btn=document.getElementById("save"), toast=document.getElementById("toast"); if(!btn) return;
+  if(bgMode || !LV.repo || LV.repo==="demo/commit-force"){ btn.remove(); return; }
+  btn.onclick=()=>{
+    const blob=new Blob([JSON.stringify(LV)],{type:"application/json"});
+    const url=URL.createObjectURL(blob), a=document.createElement("a");
+    a.href=url; a.download="commit-force-"+LV.repo.replace(/[^\w.-]+/g,"-")+".json"; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    toast.textContent="saved "+a.download+" — load it from the start screen"; toast.style.opacity="1";
+    clearTimeout(btn._t); btn._t=setTimeout(()=>toast.style.opacity="0",2600); };
+})();
+
 LV.heroes.forEach(h=>h.pal=palette(h.color));
 const heroById=Object.fromEntries(LV.heroes.map(h=>[h.id,h]));
 
@@ -321,7 +336,7 @@ const lead=actors.find(a=>a.id===LV.lead)||actors[0];
 
 let anchorX=START_X, mode="auto", camX=0, shake=0, time=0;
 let finished=false, finishT=0, thrown=0, starPtr=0;
-let resolved=0, oBattled=0, oIdle=0, prMerged=0, prRejected=0, prFlew=0;
+let resolved=0, oBattled=0, oIdle=0, prMerged=0, prRejected=0;
 let fx=[], stars=[], cards=[], planesActive=[], missiles=[], splats=[], lastEvent="";
 let tickerText="", tickerCol="#e7d7c0", tickerHold=0, lastOoh=0, banner="", bannerT=0, zoom=1;
 let parade=[], paradeQueue=[], paradeTick=0, paradeOn=false;   // post-fireworks: open issues roar past
@@ -329,7 +344,6 @@ let endStage="run", safe=null, safeShots=[], finishFlagX=0, flagRaise=0;   // ru
 let joins=[], seenNames=new Set();   // "xxx joined..." feed for first-seen contributors
 let fireRockets=[], fireParts=[], fwTimer=0;
 const FWC=["#ff4d4d","#ffd24d","#4dff88","#4dd2ff","#b84dff","#ff4db8","#ffffff","#ff9a3d"];
-const passed=()=>resolved+oBattled+oIdle;
 
 function burst(x,y,c,n=12,spd=2.6){ for(let i=0;i<n;i++) fx.push({x,y,vx:(Math.random()*2-1)*spd,vy:(Math.random()*2-1)*spd-1,life:16+Math.random()*12,color:c}); }
 function debris(x,y,n=10){ for(let i=0;i<n;i++) fx.push({x,y,vx:(Math.random()*2-1)*3.2,vy:-Math.random()*4.5-1,life:28+Math.random()*14,color:Math.random()<0.5?"#7a531f":"#4a3038"}); }
@@ -414,7 +428,7 @@ function updatePlanes(frontX){
     if(!pl.fired && pl.state!=="open" && pl.x>W*0.4){ pl.fired=true; fireMissile(pl);
       if(pl.state==="merged" && !pl.counted){ pl.counted=true; prMerged++; SFX.merge(); lastEvent="PR #"+pl.n+" merged"; } }
     if(pl.state==="rejected" && pl.fired && pl.x>W*0.6 && pl.phase==="fly"){ pl.phase="boom"; explodePlane(pl); pl.dead=true; }
-    if(pl.x>W+38){ if(pl.state==="open"&&!pl.counted){pl.counted=true;prFlew++;} pl.dead=true; }
+    if(pl.x>W+38) pl.dead=true;
   }
   const groundS=GROUND_Y-camY-8;
   for(const m of missiles){
@@ -639,7 +653,7 @@ function reset(){ for(const k in pressed) delete pressed[k];   // else 'r' stays
   OBS.forEach(initTruck); actors.forEach((a,i)=>{ a.x=START_X-40-i*16; a.y=GROUND_Y; a.vx=a.vy=0; a.act="idle"; a.controlled=false; a.riding=null; a.rideSlot=0; });
   PLANES.forEach(p=>p.launched=false); RELEASES.forEach(r=>{ r.hit=false; r.raise=0; });
   endStage="run"; safe=null; safeShots=[]; finishFlagX=0; flagRaise=0; joins=[]; seenNames.clear();
-  anchorX=START_X; mode="auto"; finished=false; finishT=0; camX=0; thrown=0; starPtr=0; resolved=oBattled=oIdle=0; prMerged=prRejected=prFlew=0;
+  anchorX=START_X; mode="auto"; finished=false; finishT=0; camX=0; thrown=0; starPtr=0; resolved=oBattled=oIdle=0; prMerged=prRejected=0;
   fx=[]; stars=[]; cards=[]; planesActive=[]; missiles=[]; splats=[]; fireRockets=[]; fireParts=[]; fwTimer=0; lastEvent=""; tickerText=""; tickerHold=0; lastOoh=0; banner=""; bannerT=0; zoom=1;
   parade=[]; paradeQueue=[]; paradeOn=false; paradeTick=0;
   SFX.resume(); SFX.startMusic(); }
@@ -675,7 +689,7 @@ function wheel(sx,sy,ang){ g.save(); g.translate(sx,sy); g.rotate(ang);
   g.strokeStyle="#6a4a52"; g.lineWidth=1; g.beginPath(); g.moveTo(-3,0); g.lineTo(3,0); g.moveTo(0,-3); g.lineTo(0,3); g.stroke(); g.restore(); }
 
 // ---- the boss: a Mad-Max war-rig road train (two long skull tankers + flatnose tractor) ----
-function drawWarRig(sx, gy, o){
+function drawWarRig(sx, gy){
   const CHR="#c8ccd0",CHRM="#9aa0a6",CHRD="#6a7076",GUN="#4a4e54",GUNH="#8a9098",GUNM="#6a7078",GUND="#2e3238",GUNDD="#20242a";
   const BODY="#5a5e64",BODYH="#7a7e84",BODYD="#34383e",TIRE="#0e0a0c",RIM="#d8d4c8",HUB="#7a4028",HUBH="#9a5836";
   const FRAME="#241a16",RUST="#6a3a20",TAN="#8a6038",OLIVE="#3a3a2a",RED="#8c1010",REDH="#c02020",WHT="#efeee6",WHD="#cfcfc7";
@@ -731,7 +745,7 @@ function drawTruck(o){
   if(o.phase==="boom"){ const a=1-o.boomT/18; g.globalAlpha=a;
     g.fillStyle="#ffd76e"; g.beginPath(); g.arc(sx,gy-14,14*(0.5+o.boomT/12),0,6.29); g.fill();
     g.fillStyle="#e33"; g.beginPath(); g.arc(sx,gy-12,9*(0.5+o.boomT/14),0,6.29); g.fill(); g.globalAlpha=1; return; }
-  if(o.boss){ g.globalAlpha=(o.fade??1); drawWarRig(sx, gy, o);
+  if(o.boss){ g.globalAlpha=(o.fade??1); drawWarRig(sx, gy);
     if(o.phase==="battle"){ const p=Math.max(0,1-o.timer/o.dur), w=110;
       const bc=p>0.5?"#6fd08a":p>0.25?"#e6c36a":"#e04a4a"; px(sx-w/2,gy-42,w,4,"#2a141a"); px(sx-w/2,gy-42,w*p,4,bc); }
     g.fillStyle="#ffd24d"; g.font="7px 'Courier New',monospace"; g.textAlign="center"; g.fillText("BOSS #"+o.n, sx, gy-45); g.textAlign="left";
@@ -748,11 +762,8 @@ function drawTruck(o){
   const cx=sx-bw/2, cw=bw-11, ct=bt-cargoH;
   px(cx,ct,cw,cargoH,col); px(cx,ct,cw,2,colL); px(cx,ct,2,cargoH,colL); px(cx+cw-2,ct,2,cargoH,colD); px(cx,ct+cargoH-2,cw,2,colD);
   g.fillStyle=lighten(col,0.6); g.font="7px 'Courier New',monospace"; g.textAlign="center"; g.fillText("#"+o.n,cx+cw/2,ct+cargoH/2+2.5); g.textAlign="left";
-  if(o.boss){ px(cx,ct,cw,2,"#e33"); px(cx,ct+cargoH-2,cw,2,"#e33");     // hazard rails
-    px(sx-14,ct-9,28,8,"#7a0f0f"); g.fillStyle="#ffd76e"; g.font="7px 'Courier New',monospace"; g.textAlign="center"; g.fillText("BOSS",sx,ct-3); g.textAlign="left"; }
-  // wheels (+ trailer bogies for the long boss semi)
+  // wheels (bosses draw as the war rig and return earlier, so they never reach here)
   wheel(sx-bw/2+6,bb,o.wheel); wheel(sx+bw/2-7,bb,o.wheel);
-  if(o.boss){ wheel(sx-bw/2+16,bb,o.wheel); wheel(sx-2,bb,o.wheel); wheel(sx+8,bb,o.wheel); px(sx+bw/2-11,bt-2,2,o.ch+2,"#241a1e"); }  // cab/trailer seam
   // battle progress bar
   if(o.phase==="battle"){ const p=Math.max(0,1-o.timer/o.dur), w=bw-4;   // health: starts full, decays to zero
     const col=p>0.5?"#6fd08a":p>0.25?"#e6c36a":"#e04a4a"; px(sx-w/2,ct-6,w,3,"#2a141a"); px(sx-w/2,ct-6,w*p,3,col); }
