@@ -18,7 +18,7 @@ issue-trucks, flinging commit-stars, dodging PR airplanes — compressed into ~a
 | `build-level.mjs` | optional local `gh` CLI path (`node build-level.mjs owner/repo`) |
 | `server.mjs` | optional local static file server for previewing |
 
-## Run locally
+## Run locally for 5000/hr
 
 The whole thing is static — clone it and serve the folder over HTTP. (ES modules don't
 load over `file://`, so you do need a server; any static server works.)
@@ -39,14 +39,20 @@ Then open the URL, type a repo (e.g. `sveltejs/svelte`), pick a branch, and hit 
 All the fetching happens in your browser against `api.github.com`; the local server only
 hands over the HTML/JS. (`server.mjs` needs a reasonably recent Node — v18+.)
 
+**When you run it on `localhost`, a `GITHUB TOKEN` field appears.** Paste a
+[read-only Personal Access Token](https://github.com/settings/tokens) (fine-grained:
+`Contents` = Read; classic: `repo` for private repos, no scopes for public) and every fetch
+uses GitHub's **5000/hr** limit instead of the anonymous 60/hr — big/busy repos in one shot,
+and private repos too. The token lives only in that browser tab and only ever goes to
+`api.github.com`; it is never persisted or sent anywhere else.
+
 ## Rate limits
 
-Unauthenticated GitHub allows **~60 requests/hour per IP** — enough for a few builds.
-There is deliberately **no token field**: a public-repo toy shouldn't ask you to trust a
-web page with a credential, and with nothing to steal the "is this page doing something
-shady?" question goes away. If you hit the limit, wait a few minutes. (Private repos
-aren't supported from the page for the same reason — see the `gh` path below if you need
-one.)
+The **hosted** site is intentionally tokenless — a public page shouldn't ask you to trust it
+with a credential — so it runs at GitHub's anonymous **~60 requests/hour per IP** (enough for
+a few builds; if you hit it, wait a few minutes). The token field literally does not exist
+off `localhost`. Want more? [Run it locally](#run-locally-for-5000hr) and paste your own
+token — same code, your machine, your credential.
 
 ## Optional: pre-bake a level with the `gh` CLI
 

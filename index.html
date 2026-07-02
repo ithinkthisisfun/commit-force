@@ -83,6 +83,11 @@
   </div>
   <select id="suggest" title="popular &amp; trending repos to try"><option value="" selected>★ suggested repos…</option></select>
 
+  <div id="tokenrow" hidden>
+    <label>GITHUB TOKEN <span class="help" data-help="Only appears when you run Commit Force locally (localhost). Paste a read-only Personal Access Token to get GitHub's 5000/hr limit instead of the anonymous 60/hr. It stays in your browser and only ever goes to api.github.com — the hosted site has no such field and never sees a token.">?</span></label>
+    <input id="token" type="password" placeholder="ghp_… — local only, optional" spellcheck="false" autocomplete="off">
+  </div>
+
   <label>COMMIT BRANCH <span class="help" data-help="Stars are the commits from ONE branch. Pick the branch where the work happened — otherwise a repo whose activity lived on a side branch shows no stars at all. Issues and PRs are repo-wide, so they're unaffected.">?</span></label>
   <select id="branch" disabled><option>—</option></select>
 
@@ -99,7 +104,7 @@
   <div id="warn"></div>
   <div class="note">GitHub allows ~60 requests/hour per IP (a few builds); if you hit that, wait a few minutes. Source is <a href="https://github.com/ithinkthisisfun/commit-force" target="_blank" rel="noreferrer">public on GitHub</a>.</div>
   <div class="note">Got a saved level? <a href="#" id="loadlink">Load a .json file</a> to replay it without touching GitHub.</div>
-  <div class="note">Rate-limited (60/hr)? Fetch locally with your own token — it never leaves your machine, and you get 5000/hr: <a href="loader-scripts/commit-force-fetch.ps1" download>PowerShell</a> · <a href="loader-scripts/commit-force-fetch.sh" download>bash</a>, then Load the <code>…-commit-force.json</code> it writes.</div>
+  <div class="note">Rate-limited (60/hr)? <a href="https://github.com/ithinkthisisfun/commit-force#run-locally-for-5000hr" target="_blank" rel="noreferrer">Run it locally</a> and paste your own read-only token for 5000/hr — a token field appears only on <code>localhost</code>, stays in your browser, and never touches this site.</div>
   <input id="loadfile" type="file" accept=".json,application/json" hidden>
 </div>
 
@@ -115,6 +120,13 @@ import { buildLevelFromGitHub, checkRepo, getBranches, getCounts, getSuggestedRe
 import { normalizeRepo, assembleLevel } from "./gitboy-core.js";
 const $ = id => document.getElementById(id);
 const repo=$("repo"), go=$("go"), bar=$("bar"), fill=$("fill"), status=$("status"), err=$("err"), check=$("check"), startInput=$("start"), endInput=$("end");
+// GITHUB TOKEN: only on localhost (running your own copy) does the PAT field appear and get used. On
+// the hosted site LOCAL is false, so the field stays hidden and TOKEN() is always "" — a token is
+// NEVER read or sent from prod. Same trust boundary as the ?api= override above.
+const LOCAL = /^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(location.hostname);
+const tokenInput = $("token");
+if (LOCAL) $("tokenrow").hidden = false;
+const TOKEN = () => (LOCAL && tokenInput ? tokenInput.value.trim() : "");
 // DATE RANGE: default to the last year (end = today, start = a year ago); prefill from ?start/?end.
 const DAY_MS = 86400000, isoDay = ms => new Date(ms).toISOString().slice(0, 10);
 { const q = new URLSearchParams(location.search);
@@ -178,7 +190,7 @@ async function doCheck() {
   // step 1 — does the repo exist? (one fast request)
   status.textContent = "checking repo…"; spin.style.display = "inline-block";
   let info;
-  try { info = await checkRepo(norm); }
+  try { info = await checkRepo(norm, TOKEN()); }
   catch (e) {
     if (my !== checkSeq) return;
     spin.style.display = "none"; status.textContent = "";
@@ -192,7 +204,7 @@ async function doCheck() {
   // step 2 — load the branch list, default-select the repo's default branch
   status.textContent = "loading branches…";
   let branches;
-  try { branches = await getBranches(norm, info.defaultBranch); }
+  try { branches = await getBranches(norm, info.defaultBranch, TOKEN()); }
   catch (e) {
     if (my !== checkSeq) return;
     spin.style.display = "none"; status.textContent = "";
@@ -212,7 +224,7 @@ async function doCheck() {
   setGo(); syncUrl();
 
   // step 3 (background) — issue/PR heads-up; does not gate GO
-  getCounts(norm).then(({ issues, prs }) => {
+  getCounts(norm, TOKEN()).then(({ issues, prs }) => {
     if (my !== checkSeq || issues == null || prs == null) return;
     $("warn").textContent = (issues === 0 && prs === 0) ? "⚠ 0 issues & 0 PRs — you'll see commit-stars only"
       : issues === 0 ? "⚠ no issues → no trucks (planes & stars only)"
@@ -274,7 +286,7 @@ async function start(){
   if (!sizeOverride) {
     busy = true; go.disabled = true; go.textContent = "CHECKING…"; $("warn").textContent = ""; status.textContent = "checking size…"; spin.style.display = "inline-block";
     let c;
-    try { c = await windowCounts(r, w.start, w.end, branchSel.value); }
+    try { c = await windowCounts(r, w.start, w.end, branchSel.value, TOKEN()); }
     catch (e) { spin.style.display = "none"; busy = false; go.disabled = false; go.textContent = "GO"; status.textContent = "";
       err.textContent = (e instanceof RateLimitError) ? rateMsg(e) : "✕ " + (e.message || e); return; }
     spin.style.display = "none"; busy = false; go.disabled = false;
@@ -290,7 +302,7 @@ async function start(){
   busy = true; go.disabled = true; go.textContent = "LOADING…"; $("warn").textContent = ""; bar.style.display = "block"; fill.style.width = "3%"; status.textContent = "contacting github…";
   try {
     const level = await buildLevelFromGitHub(r, {
-      branch: branchSel.value, start: w.start, end: w.end,
+      token: TOKEN(), branch: branchSel.value, start: w.start, end: w.end,
       onProgress: (p, m) => { fill.style.width = Math.max(3, p) + "%"; if (m) status.textContent = m; },
     });
     sessionStorage.setItem("gitboy_lastrepo", level.repo);

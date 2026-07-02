@@ -1,9 +1,7 @@
 # generated per-repo by build-level.mjs / server.mjs
 level-data.js
-# bundles written by the local fetch scripts (users generate these, don't commit)
+# saved/exported level bundles (users download these locally, don't commit)
 *-commit-force.json
-# scratch temp files from the bash fetcher (normally auto-removed by its cleanup trap)
-._cf_*
 
 # scratch files from syntax checks
 _c.js
