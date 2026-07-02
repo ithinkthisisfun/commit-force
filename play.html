@@ -243,12 +243,12 @@ const lighten=(h,f)=>rh(hx(h).map(v=>v+(255-v)*f));
 const palette=b=>({base:b,dark:darken(b,0.6),light:lighten(b,0.34)});
 
 // ---- level --------------------------------------------------------------
-const FALLBACK={ repo:"demo/commit-force", counts:{total:5,closed:2,open:3,openActive:1,idle:2,commits:16}, span:{days:14},
+const FALLBACK={ repo:"demo/commit-force", counts:{total:5,closed:3,open:2,openActive:0,idle:2,commits:16}, span:{days:14},
   heroes:[{id:"bug",name:"Bug Squad",color:"#c92b2b",count:2,real:true},{id:"feat",name:"Feature Team",color:"#2f7fd8",count:3,real:true}],
   lead:"feat",
   obstacles:[
     {n:1,title:"Null crash on startup",state:"closed",kind:"truck",hero:"bug",diff:2,t:0.05,endT:0.14,engage:true,resolves:true},
-    {n:2,title:"Add dark mode",state:"open",kind:"truck",hero:"feat",diff:1,t:0.2,endT:0.28,engage:true,resolves:false},
+    {n:2,title:"Add dark mode",state:"closed",kind:"truck",hero:"feat",diff:1,t:0.2,endT:0.28,engage:true,resolves:true,labels:["enhancement"]},
     {n:3,title:"Old idea nobody did",state:"open",kind:"truck",hero:"feat",diff:1,t:0.4,endT:0.4,engage:false,resolves:false},
     {n:4,title:"CORS misconfig",state:"closed",kind:"truck",hero:"bug",diff:1,t:0.6,endT:0.66,engage:true,resolves:true},
     {n:5,title:"Realtime sync someday",state:"open",kind:"truck",hero:"feat",diff:3,t:0.82,endT:0.82,engage:false,resolves:false},
@@ -353,7 +353,7 @@ let anchorX=START_X, mode="auto", camX=0, shake=0, time=0;
 let finished=false, finishT=0, thrown=0, starPtr=0, starQueue=[];
 const STAR_RATE=5;   // commits flung per frame -> a steady shower whatever the local density (no deluge)
 let resolved=0, oBattled=0, oIdle=0, prMerged=0, prRejected=0;
-let fx=[], stars=[], cards=[], planesActive=[], missiles=[], splats=[], lastEvent="";
+let fx=[], stars=[], cards=[], planesActive=[], missiles=[], balloons=[], bubbles=[], splats=[], lastEvent="";
 let tickerText="", tickerCol="#e7d7c0", tickerHold=0, lastOoh=0, banner="", bannerT=0, zoom=1;
 let parade=[], paradeQueue=[], paradeTick=0, paradeOn=false;   // post-fireworks: open issues roar past
 let endStage="run", safe=null, safeShots=[], finishFlagX=0, flagRaise=0;   // run -> safe -> win -> parade
@@ -521,6 +521,49 @@ function drawMissile(m){ const x=Math.round(m.x), y=Math.round(m.y);
   g.globalAlpha=0.7; g.fillStyle="#ffcf7a"; px(x-3,y-1,3,2); px(x-5,y-1,2,1); g.globalAlpha=1;   // flame trail
   g.fillStyle=m.color; px(x-1,y-1,4,2); px(x+3,y-1,1,2); }                                        // body + tip
 
+// ---- balloons ----  a closed "enhancement" issue floats a balloon out of the wreck: same drift+sway
+// as the merged-PR parachute, but buoyant (rises) with a string trailing below. World-space, so it
+// stays anchored to where the truck blew up and scrolls off with the level.
+const isEnhancement=o=>/enhanc/i.test((o.labels||[]).join(" "));         // GitHub "enhancement" label
+const BALLOON_COLORS=["#ff5a7a","#59b6ff","#ffce4a","#68d96e","#c483ff","#ff9f43"];
+function spawnBalloon(o){                                                  // screen-space (player-anchored, like the parachutes) so the scroll doesn't whisk it away
+  balloons.push({ x:o.x-camX+(Math.random()*2-1)*5, y:o.roof-camY-2, vy:-0.25, sway:Math.random()*6.28,
+    drift:(Math.random()*2-1)*0.35, swayAmp:0.3+Math.random()*0.4, life:900,
+    color:BALLOON_COLORS[(Math.random()*BALLOON_COLORS.length)|0], n:o.n });
+  SFX.sparkle(); }
+function drawBalloon(b){ const x=Math.round(b.x), y=Math.round(b.y), s=Math.sin(b.sway);
+  g.strokeStyle="#caa85a"; g.lineWidth=1; g.beginPath(); g.moveTo(x,y+7);                          // string (~parachute-length) curled by the sway
+  g.quadraticCurveTo(x+s*4,y+14,x+Math.sin(b.sway+0.7)*3,y+22); g.stroke();
+  g.fillStyle=b.color; g.beginPath(); g.ellipse(x,y,6,7,0,0,6.2832); g.fill();                     // round body
+  g.fillStyle=darken(b.color,0.7); g.beginPath(); g.moveTo(x-2,y+6); g.lineTo(x+2,y+6); g.lineTo(x,y+9); g.closePath(); g.fill();  // knot
+  g.fillStyle="rgba(255,255,255,0.55)"; px(x-3,y-4,2,3);                                            // highlight glint
+  g.fillStyle=b.color; g.font="6px 'Courier New',monospace"; g.textAlign="center"; g.fillText("#"+b.n,x,y-10); g.textAlign="left"; }
+
+// ---- bug-kill bubble ----  a killed bug (closed "bug" issue) pops a white speech bubble with a
+// crossed-out beetle. It does NOT float: world-anchored, so it scrolls off with the level, and fades
+// out over ~1s. life is in frames (~60 = 1s).
+function spawnBubble(o){ bubbles.push({ x:o.x-camX+(Math.random()*2-1)*3, y:o.roof-camY-18, life:66, max:66 }); }  // screen-space, lifted clear of the explosion
+function rrect(x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y);
+  g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
+function drawBubble(bb){ const x=Math.round(bb.x), y=Math.round(bb.y);
+  g.globalAlpha=Math.min(1, bb.life/16);                              // hold, then fade in the last ~16 frames
+  const w=22,h=16;
+  g.fillStyle="#fff"; g.strokeStyle="#20242a"; g.lineWidth=1;
+  g.fillStyle="#fff"; g.beginPath(); g.moveTo(x-3,y+h/2-2); g.lineTo(x+1,y+h/2+5); g.lineTo(x+4,y+h/2-2); g.closePath(); g.fill();  // tail toward the wreck
+  rrect(x-w/2,y-h/2,w,h,4); g.fillStyle="#fff"; g.fill(); g.strokeStyle="#20242a"; g.stroke();
+  g.fillStyle="#111"; g.strokeStyle="#111"; g.lineWidth=1;            // abstract beetle
+  g.beginPath(); g.ellipse(x,y+1,3,4,0,0,6.2832); g.fill();           // body
+  g.beginPath(); g.ellipse(x,y-3.5,1.7,1.6,0,0,6.2832); g.fill();     // head
+  g.beginPath();
+  g.moveTo(x-3,y);   g.lineTo(x-6,y-2);   g.moveTo(x-3,y+2); g.lineTo(x-6,y+3);   // left legs
+  g.moveTo(x+3,y);   g.lineTo(x+6,y-2);   g.moveTo(x+3,y+2); g.lineTo(x+6,y+3);   // right legs
+  g.moveTo(x-1,y-5); g.lineTo(x-3,y-7);   g.moveTo(x+1,y-5); g.lineTo(x+3,y-7);   // antennae
+  g.stroke();
+  g.strokeStyle="#e0201b"; g.lineWidth=1.6;                           // red prohibition circle + slash
+  g.beginPath(); g.arc(x,y,7,0,6.2832); g.stroke();
+  g.beginPath(); g.moveTo(x-5,y+5); g.lineTo(x+5,y-5); g.stroke();
+  g.globalAlpha=1; }
+
 function startAttack(a,move){ if(a.act!=="idle")return;
   if(move==="kick"){ a.act="kick"; a.actT=KICK_T; a.vx=a.face*4.2; a.vy=Math.min(a.vy,-1.8); } else { a.act="punch"; a.actT=PUNCH_T; } }
 function doJump(a){ if(a.onGround){ a.vy=-JUMP; a.onGround=false; burst(a.x,a.y-1,a.pal.light,5,1.6); burst(a.x,a.y-2,"#b81f1f",3,1.2); } }
@@ -595,7 +638,9 @@ function update(){
           else { o.phase="boom"; o.boomT=0; SFX.explosion(); shake=18;
             burst(o.x,GROUND_Y-14,"#ffd76e",52,4); burst(o.x,GROUND_Y-12,"#e33",40,3.6); debris(o.x,GROUND_Y-14,24);
             gib(o.x,o.roof+8,26); addSplat(o.x); crew.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6.5; r.act="idle"; });
-            SFX.yeah(); banner="BOSS DEFEATED"; bannerT=200; popCard(o,"RESOLVED"); setTicker(o,"RESOLVED","#8fd8a0"); lastEvent=crew[0].name+" resolved #"+o.n; }
+            SFX.yeah(); banner="BOSS DEFEATED"; bannerT=200; popCard(o,"RESOLVED"); setTicker(o,"RESOLVED","#8fd8a0"); lastEvent=crew[0].name+" resolved #"+o.n;
+            if(isEnhancement(o)) for(let i=0;i<5;i++) spawnBalloon(o);      // enhancement shipped -> a bunch of balloons
+            if(o.hero==="bug") spawnBubble(o); }                            // bug killed -> "no bug" bubble
           o.riders=null; }
       } else {                                             // regular truck: a dude works it ~3s then hops off; a CLOSED one booms on its real close date
         const overdue = o.resolves && frontX>=o.closeX;      // past its close date -> expiring: slow down and let the camera carry it left past the midline
@@ -620,6 +665,9 @@ function update(){
             gib(o.x,o.roof+8,10); addSplat(o.x);
             if(o.riders){ o.riders.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6.5; r.act="idle"; }); o.riders=null; }
             if(o.size>=3) SFX.yeah();
+            if(isEnhancement(o)) spawnBalloon(o);                 // closed enhancement -> a balloon floats out of the wreck
+            if(o.hero==="bug") spawnBubble(o);                    // closed bug -> "no bug" speech bubble
+
             popCard(o,"RESOLVED"); setTicker(o,"RESOLVED","#8fd8a0"); lastEvent="#"+o.n+" resolved"; }
         }
       }
@@ -637,6 +685,10 @@ function update(){
   }
 
   updatePlanes(frontX);
+  for(const b of balloons){ b.vy=Math.max(-1.05,b.vy-0.0105); b.sway+=0.05; b.x+=b.drift+Math.sin(b.sway)*b.swayAmp; b.y+=b.vy; b.life--; }
+  balloons=balloons.filter(b=>b.life>0 && b.y>-48);          // screen-space: cull when it clears the top of the screen or times out
+  for(const bb of bubbles) bb.life--;                        // bug-kill bubbles: screen-anchored, no motion, just fade over ~1s
+  bubbles=bubbles.filter(bb=>bb.life>0);
   if(!finished && Math.random()<0.006) SFX.grunt();
 
   // release checkpoints -> banner + confetti when the pack passes
@@ -737,7 +789,7 @@ function reset(){ for(const k in pressed) delete pressed[k];   // else 'r' stays
   PLANES.forEach(p=>p.launched=false); RELEASES.forEach(r=>{ r.hit=false; r.raise=0; });
   endStage="run"; safe=null; safeShots=[]; finishFlagX=0; flagRaise=0; joins=[]; seenNames.clear();
   anchorX=START_X; mode="auto"; finished=false; finishT=0; camX=0; thrown=0; starPtr=0; starQueue=[]; resolved=oBattled=oIdle=0; prMerged=prRejected=0;
-  fx=[]; stars=[]; cards=[]; planesActive=[]; missiles=[]; splats=[]; fireRockets=[]; fireParts=[]; fwTimer=0; lastEvent=""; tickerText=""; tickerHold=0; lastOoh=0; banner=""; bannerT=0; zoom=1;
+  fx=[]; stars=[]; cards=[]; planesActive=[]; missiles=[]; balloons=[]; bubbles=[]; splats=[]; fireRockets=[]; fireParts=[]; fwTimer=0; lastEvent=""; tickerText=""; tickerHold=0; lastOoh=0; banner=""; bannerT=0; zoom=1;
   parade=[]; paradeQueue=[]; paradeOn=false; paradeTick=0;
   curDateMs=null; timeFlash=0; skipText=""; skipSub=""; skipT=0;
   for(const s of SKIPS){ s.c0=s.x0<=W/2; s.c1=s.x1<=W/2; }
@@ -1027,6 +1079,8 @@ function render(){
   for(const a of [...actors].sort((p,q)=>p.x-q.x)) drawGuy(a);
   for(const pl of planesActive) drawPlane(pl);
   for(const m of missiles) drawMissile(m);
+  for(const b of balloons) drawBalloon(b);
+  for(const bb of bubbles) drawBubble(bb);
   for(const p of fx){ g.globalAlpha=Math.max(0,p.life/24); px(p.x-camX,p.y-camY,2,2,p.color); } g.globalAlpha=1;
   drawSeams();
   drawCards(); g.restore(); drawHUD();

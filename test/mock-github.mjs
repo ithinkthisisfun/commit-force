@@ -109,6 +109,10 @@ function handle(req, res, seed) {
   if (RATE_LIMIT > 0 && REQUESTS > RATE_LIMIT) return sendRateLimit(res);   // budget exhausted -> real 403 (set MOCK_RATE_LIMIT low to test)
   if (magicFail(res, p, qp)) return;               // magic repos short-circuit with a forced failure
 
+  if (p === "/user") return sendJSON(res, 200, { login: "mock-user", id: 1 });   // whoami preflight (the fetch scripts greet you by login)
+  if (p === "/rate_limit") { const rem = RATE_LIMIT > 0 ? Math.max(0, RATE_LIMIT - REQUESTS) : 60;   // budget endpoint (friendly "N left, resets HH:MM")
+    return sendJSON(res, 200, { rate: { limit: RATE_LIMIT || 60, remaining: rem, used: Math.min(REQUESTS, RATE_LIMIT || 60), reset: Math.floor(Date.now() / 1000) + 3600 } }); }
+
   if (/^\/repos\/[^/]+\/[^/]+$/.test(p)) return sendJSON(res, 200, { default_branch: "main", private: false, full_name: p.slice(7) });
   if (/^\/repos\/[^/]+\/[^/]+\/branches$/.test(p)) { const { slice, link } = paginate([{ name: "main" }, { name: "develop" }, { name: "release" }], u); return sendJSON(res, 200, slice, { Link: link }); }
 
