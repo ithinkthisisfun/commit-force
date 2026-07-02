@@ -4,7 +4,8 @@
 
 import { assembleLevel, normalizeRepo } from "./gitboy-core.js";
 
-const API = "https://api.github.com";
+// Real GitHub in production; tests/the mock server redirect it via globalThis.__GH_API (inert here).
+const API = (typeof globalThis !== "undefined" && globalThis.__GH_API) || "https://api.github.com";
 
 function headers(token) {
   const h = { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };

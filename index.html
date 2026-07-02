@@ -99,12 +99,20 @@
   <div id="warn"></div>
   <div class="note">GitHub allows ~60 requests/hour per IP (a few builds); if you hit that, wait a few minutes. Source is <a href="https://github.com/ithinkthisisfun/commit-force" target="_blank" rel="noreferrer">public on GitHub</a>.</div>
   <div class="note">Got a saved level? <a href="#" id="loadlink">Load a .json file</a> to replay it without touching GitHub.</div>
+  <div class="note">Rate-limited (60/hr)? Fetch locally with your own token — it never leaves your machine, and you get 5000/hr: <a href="loader-scripts/commit-force-fetch.ps1" download>PowerShell</a> · <a href="loader-scripts/commit-force-fetch.sh" download>bash</a>, then Load the <code>…-commit-force.json</code> it writes.</div>
   <input id="loadfile" type="file" accept=".json,application/json" hidden>
 </div>
 
+<script>
+  // LOCAL DEV ONLY: point the fetch layer at a mock GitHub via ?api=http://localhost:PORT
+  // (see test/mock-github.mjs). Guarded to localhost so a shared/production link can NEVER
+  // redirect a visitor's GitHub calls elsewhere.
+  (function () { var a = new URLSearchParams(location.search).get("api");
+    if (a && /^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(location.hostname)) window.__GH_API = a; })();
+</script>
 <script type="module">
 import { buildLevelFromGitHub, checkRepo, getBranches, getCounts, getSuggestedRepos, windowCounts, CAPS, RateLimitError } from "./gitboy-github.js";
-import { normalizeRepo } from "./gitboy-core.js";
+import { normalizeRepo, assembleLevel } from "./gitboy-core.js";
 const $ = id => document.getElementById(id);
 const repo=$("repo"), go=$("go"), bar=$("bar"), fill=$("fill"), status=$("status"), err=$("err"), check=$("check"), startInput=$("start"), endInput=$("end");
 // DATE RANGE: default to the last year (end = today, start = a year ago); prefill from ?start/?end.
@@ -308,8 +316,19 @@ loadlink.onclick = e => { e.preventDefault(); loadfile.click(); };
 loadfile.onchange = async () => {
   const f = loadfile.files[0]; if (!f) return; err.textContent = "";
   try {
-    const level = JSON.parse(await f.text());
-    if (!level || !Array.isArray(level.obstacles) || !Array.isArray(level.heroes) || !level.counts) throw new Error("not a Commit Force level file");
+    let level = JSON.parse(await f.text());
+    if (!level) throw new Error("empty file");
+    if (!Array.isArray(level.obstacles)) {
+      // a RAW BUNDLE from the local fetch script (issues/prs/commits) -> assemble it here in the browser
+      const b = level;
+      if (!Array.isArray(b.issues) && !Array.isArray(b.prs) && !Array.isArray(b.commits)) throw new Error("not a Commit Force level or bundle file");
+      level = assembleLevel(b.repo || "local/level", {
+        issues: b.issues || [], prs: b.prs || [], commits: b.commits || [], releases: b.releases || [],
+        start: b.start != null ? new Date(b.start).getTime() : undefined,
+        end: b.end != null ? new Date(b.end).getTime() : undefined,
+      });
+      if (b.branch) level.branch = b.branch;
+    }
     sessionStorage.setItem("gitboy_lastrepo", level.repo || "");
     sessionStorage.setItem("GITBOY_LEVEL", JSON.stringify(level));
     status.textContent = "loaded " + (level.repo || "level") + " — starting…";
