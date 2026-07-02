@@ -83,11 +83,6 @@
   </div>
   <select id="suggest" title="popular &amp; trending repos to try"><option value="" selected>★ suggested repos…</option></select>
 
-  <div id="tokenrow" hidden>
-    <label>GITHUB TOKEN <span class="help" data-help="Only appears when you run Commit Force locally (localhost). Paste a read-only Personal Access Token to get GitHub's 5000/hr limit instead of the anonymous 60/hr. It stays in your browser and only ever goes to api.github.com — the hosted site has no such field and never sees a token.">?</span></label>
-    <input id="token" type="password" placeholder="ghp_… — local only, optional" spellcheck="false" autocomplete="off">
-  </div>
-
   <label>COMMIT BRANCH <span class="help" data-help="Stars are the commits from ONE branch. Pick the branch where the work happened — otherwise a repo whose activity lived on a side branch shows no stars at all. Issues and PRs are repo-wide, so they're unaffected.">?</span></label>
   <select id="branch" disabled><option>—</option></select>
 
@@ -104,7 +99,7 @@
   <div id="warn"></div>
   <div class="note">GitHub allows ~60 requests/hour per IP (a few builds); if you hit that, wait a few minutes. Source is <a href="https://github.com/ithinkthisisfun/commit-force" target="_blank" rel="noreferrer">public on GitHub</a>.</div>
   <div class="note">Got a saved level? <a href="#" id="loadlink">Load a .json file</a> to replay it without touching GitHub.</div>
-  <div class="note">Rate-limited (60/hr)? <a href="https://github.com/ithinkthisisfun/commit-force#run-locally-for-5000hr" target="_blank" rel="noreferrer">Run it locally</a> and paste your own read-only token for 5000/hr — a token field appears only on <code>localhost</code>, stays in your browser, and never touches this site.</div>
+  <div class="note">Rate-limited (60/hr)? <a href="https://github.com/ithinkthisisfun/commit-force#run-locally-for-5000hr" target="_blank" rel="noreferrer">Run it locally</a> for 5000/hr — drop a read-only token into <code>local-token.js</code> (never deployed; stays on your machine).</div>
   <input id="loadfile" type="file" accept=".json,application/json" hidden>
 </div>
 
@@ -114,19 +109,19 @@
   // redirect a visitor's GitHub calls elsewhere.
   (function () { var a = new URLSearchParams(location.search).get("api");
     if (a && /^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(location.hostname)) window.__GH_API = a; })();
+  // Optional LOCAL-ONLY token: copy local-token.example.js -> local-token.js (gitignored, never
+  // deployed) and paste a read-only PAT for 5000/hr from your own copy. Absent in prod -> a harmless no-op.
+  (function () { var s = document.createElement("script"); s.src = "local-token.js"; s.onerror = function () {}; document.head.appendChild(s); })();
 </script>
 <script type="module">
 import { buildLevelFromGitHub, checkRepo, getBranches, getCounts, getSuggestedRepos, windowCounts, CAPS, RateLimitError } from "./gitboy-github.js";
 import { normalizeRepo, assembleLevel } from "./gitboy-core.js";
 const $ = id => document.getElementById(id);
 const repo=$("repo"), go=$("go"), bar=$("bar"), fill=$("fill"), status=$("status"), err=$("err"), check=$("check"), startInput=$("start"), endInput=$("end");
-// GITHUB TOKEN: only on localhost (running your own copy) does the PAT field appear and get used. On
-// the hosted site LOCAL is false, so the field stays hidden and TOKEN() is always "" — a token is
-// NEVER read or sent from prod. Same trust boundary as the ?api= override above.
-const LOCAL = /^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(location.hostname);
-const tokenInput = $("token");
-if (LOCAL) $("tokenrow").hidden = false;
-const TOKEN = () => (LOCAL && tokenInput ? tokenInput.value.trim() : "");
+// GITHUB TOKEN comes ONLY from local-token.js (window.__GH_TOKEN) -- a gitignored, never-deployed file
+// you create from local-token.example.js when running your own copy. It doesn't exist in prod, so
+// __GH_TOKEN is undefined there and TOKEN() is always "" -- the hosted site can't read or send a token.
+const TOKEN = () => { const t = window.__GH_TOKEN; return (t && t !== "PASTE PAT HERE") ? String(t).trim() : ""; };
 // DATE RANGE: default to the last year (end = today, start = a year ago); prefill from ?start/?end.
 const DAY_MS = 86400000, isoDay = ms => new Date(ms).toISOString().slice(0, 10);
 { const q = new URLSearchParams(location.search);

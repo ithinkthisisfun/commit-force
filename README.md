@@ -39,20 +39,28 @@ Then open the URL, type a repo (e.g. `sveltejs/svelte`), pick a branch, and hit 
 All the fetching happens in your browser against `api.github.com`; the local server only
 hands over the HTML/JS. (`server.mjs` needs a reasonably recent Node — v18+.)
 
-**When you run it on `localhost`, a `GITHUB TOKEN` field appears.** Paste a
-[read-only Personal Access Token](https://github.com/settings/tokens) (fine-grained:
-`Contents` = Read; classic: `repo` for private repos, no scopes for public) and every fetch
-uses GitHub's **5000/hr** limit instead of the anonymous 60/hr — big/busy repos in one shot,
-and private repos too. The token lives only in that browser tab and only ever goes to
-`api.github.com`; it is never persisted or sent anywhere else.
+**Want 5000/hr (and private repos)?** Drop a [read-only Personal Access Token](https://github.com/settings/tokens)
+(fine-grained: `Contents` = Read; classic: `repo` for private repos, no scopes for public) into a
+local-only file:
+
+```bash
+cp local-token.example.js local-token.js
+# then edit local-token.js:   window.__GH_TOKEN = "ghp_your_token_here";
+```
+
+Reload your local copy and every fetch uses your token. `local-token.js` is **gitignored and
+stripped from the deploy**, so it stays on your machine and only ever goes to `api.github.com`.
+There is deliberately no token *field* on the page — nothing to leak, and nothing that could be
+accidentally enabled in production.
 
 ## Rate limits
 
 The **hosted** site is intentionally tokenless — a public page shouldn't ask you to trust it
 with a credential — so it runs at GitHub's anonymous **~60 requests/hour per IP** (enough for
-a few builds; if you hit it, wait a few minutes). The token field literally does not exist
-off `localhost`. Want more? [Run it locally](#run-locally-for-5000hr) and paste your own
-token — same code, your machine, your credential.
+a few builds; if you hit it, wait a few minutes). There is no token field or input anywhere in
+the app — the only way to authenticate is a local-only `local-token.js` that is never deployed.
+Want more? [Run it locally](#run-locally-for-5000hr) and drop in your own token — same code, your
+machine, your credential.
 
 ## Optional: pre-bake a level with the `gh` CLI
 
