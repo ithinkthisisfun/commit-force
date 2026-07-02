@@ -118,18 +118,17 @@ export function assembleLevel(repo, { issues = [], prs = [], commits = [], relea
     .map(r => ({ tag: r.tag, name: r.name || r.tag, pre: !!r.pre, t: frac(r.ms) }))
     .sort((a, b) => a.t - b.t);
 
-  // Boss = the hottest CLOSED issue, Reddit-style: discussion (comments, log-scaled like upvotes)
-  // balanced against recency, so it lands as a late-level climax. It MUST be closed -- an open boss
-  // just flees (see play.html), so picking the hottest issue regardless of state meant the boss almost
-  // never died. Closed-only guarantees a real BOSS DEFEATED. Raising BOSS_RECENCY_W favors recency.
+  // Bosses (up to TWO): hotness = discussion (comments, log-scaled like upvotes) balanced against
+  // recency. Take the top-2 OPEN and top-2 CLOSED issues, then randomly pick two of that pool -- so a
+  // run might get two closed (both die), two open (both flee), or one of each. That uncertainty is the
+  // point: a closed-only boss always dies (no tension), a hottest-overall boss almost always flees.
   const BOSS_RECENCY_W = 2;
-  let boss = null, bossScore = -Infinity;
-  for (const o of obstacles) {
-    if (o.state !== "closed" || o.comments < 2) continue;   // closed-only -> the boss always resolves (dies)
-    const s = Math.log10(o.comments + 1) + BOSS_RECENCY_W * o.t;   // o.t is the clamped, linear recency (0 = window start .. 1 = newest)
-    if (s > bossScore) { bossScore = s; boss = o; }
-  }
-  if (boss) boss.boss = true;
+  const scored = obstacles.filter(o => o.comments >= 2)
+    .map(o => ({ o, s: Math.log10(o.comments + 1) + BOSS_RECENCY_W * o.t }));   // o.t = clamped linear recency (0 = window start .. 1 = newest)
+  const topN = (arr, n) => arr.sort((a, b) => b.s - a.s).slice(0, n).map(x => x.o);
+  const pool = [...topN(scored.filter(x => x.o.state !== "closed"), 2), ...topN(scored.filter(x => x.o.state === "closed"), 2)];
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }   // shuffle
+  pool.slice(0, 2).forEach(o => { o.boss = true; });
 
   const closedN = obstacles.filter(o => o.state === "closed").length;
   const openN = obstacles.filter(o => o.state === "open").length;

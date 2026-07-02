@@ -327,7 +327,7 @@ function initTruck(o){ o.spawned=false; o.done=false; o.phase="pending"; o.rider
   // use dur -- they resolve at o.closeX (their actual close date).
   o.dur = o.boss ? Math.min(1300, Math.round(480 + (o.comments||0)*12)) : 0; }
 OBS.forEach(initTruck);
-const BOSS=OBS.find(o=>o.boss)||null;                      // at most one boss truck
+const BOSSES=OBS.filter(o=>o.boss);                        // 0..2 boss trucks (gitboy-core picks up to two)
 
 // dense-zone platforms (built from truck + star density) -- reachable low ledges
 const platforms=[];
@@ -585,8 +585,8 @@ function update(){
 
   const runners=actors.filter(a=>!a.riding);
   const frontX=(runners.length?Math.max(...runners.map(a=>a.x)):Math.max(...actors.map(a=>a.x)));
-  const bossFight=BOSS&&BOSS.phase==="battle"&&BOSS.timer<BOSS_BULLET;   // bullet time: only the first 4s of the boss brawl
-  SFX.boss(BOSS&&BOSS.phase==="battle");                    // dread music through the whole boss battle
+  const bossFight=BOSSES.some(o=>o.phase==="battle"&&o.timer<BOSS_BULLET);   // bullet time: first 4s of ANY boss brawl
+  SFX.boss(BOSSES.some(o=>o.phase==="battle"));             // dread music while any boss is battling
   if(!finished) anchorX+=RUNSPEED*(bossFight?0.32:1);       // bullet-time slow-mo; snaps back to full speed for the running battle
 
   for(const a of actors) updateActor(a,frontX);
@@ -604,7 +604,7 @@ function update(){
 
   // ---- dispatch trucks (in timeline order) ----
   let active=OBS.filter(o=>o.spawned&&!o.done).length;
-  if(BOSS && BOSS.phase==="pending" && frontX>=BOSS.spawnX-TRUCK_LEAD){ dispatchTruck(BOSS,active); active++; }   // boss jumps the queue -> always on time
+  for(const b of BOSSES){ if(b.phase==="pending" && frontX>=b.spawnX-TRUCK_LEAD){ dispatchTruck(b,active); active++; } }   // bosses jump the queue -> always on time
   for(const o of OBS){
     if(o.phase!=="pending") continue;
     if(frontX<o.spawnX-TRUCK_LEAD) break;         // sorted: nothing later is due yet (LEAD = slide-in head start)
@@ -727,8 +727,9 @@ function update(){
 
   const focus=(mode==="play")?lead.x:(frontX-40);
   // once the boss brawl starts, center the whole war rig and hold it there until it's dead (never scrolls off-screen)
-  const framingBoss = BOSS && BOSS.hadRider && !BOSS.done && BOSS.phase!=="flee";   // let go once it's fleeing, so it can exit right
-  const tx=Math.max(0,Math.min(WORLD_END-W, framingBoss ? (BOSS.x - W/2) : (focus-W*0.2)));
+  const fboss = BOSSES.find(o=>o.hadRider && !o.done && o.phase!=="flee");   // the boss the camera holds on (release once it's fleeing)
+  const framingBoss = !!fboss;
+  const tx=Math.max(0,Math.min(WORLD_END-W, framingBoss ? (fboss.x - W/2) : (focus-W*0.2)));
   camX+=(tx-camX)*(framingBoss?0.055:0.14); if(shake>0) shake-=0.5;   // looser follow in the boss brawl so the rig visibly sways (but stays framed)
   for(const k in pressed) delete pressed[k];
 }
