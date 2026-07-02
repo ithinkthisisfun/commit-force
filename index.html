@@ -36,6 +36,7 @@
   #bg{ position:fixed; inset:0; width:100%; height:100%; border:0; opacity:.82; filter:saturate(1) brightness(.95); pointer-events:none; z-index:0; }
   #veil{ position:fixed; inset:0; background:rgba(10,6,8,.28); pointer-events:none; z-index:0; }
   .row{ display:flex; gap:12px; } .row>div{ flex:1; }
+  @media (max-width:480px){ .row{ flex-direction:column; gap:8px; } }   /* stack the date pickers on phones */
   small{ color:#c7b3b8; font-size:10px; } small a{ color:#c7b3b8; }
   #suggest{ margin-top:7px; font-size:12px; padding:8px 10px; color:#c7b3b8; }
   #suggest option{ color:#ffd; }
@@ -274,14 +275,14 @@ async function start(){
     if (c.issues  != null && c.issues  > CAPS.issues)  over.push(c.issues.toLocaleString()  + " issues");
     if (c.prs     != null && c.prs     > CAPS.prs)     over.push(c.prs.toLocaleString()     + " PRs");
     if (over.length) {
-      $("warn").textContent = "⚠ " + over.join(" · ") + " in this range — over the caps (" + CAPS.commits + " commits / " + CAPS.issues + " issues / " + CAPS.prs + " PRs). Tighten the range to see it ALL, or hit GO again to build the newest slice.";
+      $("warn").textContent = "⚠ " + over.join(" · ") + " in this range — that's a big pull. Tighten the dates, or hit GO again to grab it ALL (slower, and it can hit GitHub's ~60/hr limit).";
       status.textContent = ""; sizeOverride = true; go.textContent = "GO ANYWAY"; return;
     }
   }
   busy = true; go.disabled = true; go.textContent = "LOADING…"; $("warn").textContent = ""; bar.style.display = "block"; fill.style.width = "3%"; status.textContent = "contacting github…";
   try {
     const level = await buildLevelFromGitHub(r, {
-      branch: branchSel.value, start: w.start, end: w.end, uncapped: sizeOverride,
+      branch: branchSel.value, start: w.start, end: w.end,
       onProgress: (p, m) => { fill.style.width = Math.max(3, p) + "%"; if (m) status.textContent = m; },
     });
     sessionStorage.setItem("gitboy_lastrepo", level.repo);

@@ -102,8 +102,9 @@ async function pageCount(path, token) {
   const arr = await res.json();
   return Array.isArray(arr) ? arr.length : 0;
 }
-// The hard caps a build applies; the picker warns before a range would blow past them.
-export const CAPS = { issues: 150, prs: 150, commits: 500 };
+// Warning thresholds (NOT hard caps): the picker flags a range that exceeds these before building.
+// The build itself downloads everything in the range -- the range is the control, not a ceiling.
+export const CAPS = { issues: 500, prs: 500, commits: 500 };
 // How much a time range holds -- cheap (search total_count + the commits Link-header trick), so the
 // picker can warn before building. A field is null on a soft failure (count unknown); rate limits throw.
 export async function windowCounts(repoRaw, start, end, branch = "", token = "") {
@@ -142,26 +143,27 @@ export async function getRepoInfo(repoRaw, token = "") {
 // Fetch a repo's activity within [start, end] (ms; default = last year to now) and build a level.
 // Windowed by last-updated (so an old issue that's still being discussed stays in) and capped hard --
 // no counting, no most-discussed fold-in. The core positions it all linearly, with no time-warps.
-export async function buildLevelFromGitHub(repoRaw, { token = "", branch = "", start, end, uncapped = false, onProgress = () => {} } = {}) {
+export async function buildLevelFromGitHub(repoRaw, { token = "", branch = "", start, end, onProgress = () => {} } = {}) {
   const repo = normalizeRepo(repoRaw);
   if (!repo.includes("/")) throw new Error("enter a repo as owner/name");
   if (end == null) end = Date.now();
   if (start == null) start = end - 365 * 86400000;
   const startISO = new Date(start).toISOString(), endISO = new Date(end).toISOString();
   const updatedOf = x => new Date(x.updated_at || x.created_at).getTime();
-  const cap = n => uncapped ? Infinity : n;   // "GO ANYWAY" -> pull EVERYTHING in the range (the rate-limit guard still applies)
+  // The range IS the limit: pull EVERYTHING in [start, end]. No truncation, so a wider range really
+  // downloads more (the 60/hr rate-limit guard self-limits a runaway and surfaces its warning).
 
   // The /issues endpoint returns PRs too — filter them out with .pull_request. `since` filters by
   // last-updated server-side; pagedWindow keeps only [start, end].
   onProgress(8, "reading issues…");
   const issuesRaw = await pagedWindow(`/repos/${repo}/issues?state=all&sort=updated&direction=desc&since=${encodeURIComponent(startISO)}`,
-    token, cap(CAPS.issues + 60), start, end, updatedOf, n => onProgress(8 + Math.min(20, n / CAPS.issues * 20), `reading issues… ${n}`));
+    token, Infinity, start, end, updatedOf, n => onProgress(8 + Math.min(20, n / CAPS.issues * 20), `reading issues… ${n}`));
   const mapIssue = i => ({ number: i.number, title: i.title, url: i.html_url, state: i.state, labels: i.labels || [],
     author: i.user ? { login: i.user.login } : null, comments: i.comments, createdAt: i.created_at, updatedAt: i.updated_at, closedAt: i.closed_at });
-  const issues = issuesRaw.filter(i => !i.pull_request).slice(0, cap(CAPS.issues)).map(mapIssue);
+  const issues = issuesRaw.filter(i => !i.pull_request).map(mapIssue);
 
   onProgress(34, "reading pull requests…");
-  const prsRaw = await pagedWindow(`/repos/${repo}/pulls?state=all&sort=updated&direction=desc`, token, cap(CAPS.prs), start, end, updatedOf);
+  const prsRaw = await pagedWindow(`/repos/${repo}/pulls?state=all&sort=updated&direction=desc`, token, Infinity, start, end, updatedOf);
   const prs = prsRaw.map(p => ({ number: p.number, title: p.title, state: p.state, author: p.user ? { login: p.user.login } : null,
     createdAt: p.created_at, closedAt: p.closed_at, mergedAt: p.merged_at }));
 
@@ -178,7 +180,7 @@ export async function buildLevelFromGitHub(repoRaw, { token = "", branch = "", s
   let commitList = [], commitError = null;
   try {
     const commitsPath = `/repos/${repo}/commits?since=${encodeURIComponent(startISO)}&until=${encodeURIComponent(endISO)}${branch ? `&sha=${encodeURIComponent(branch)}` : ""}`;
-    const comRaw = await paged(commitsPath, token, cap(CAPS.commits), n => onProgress(58 + Math.min(30, n / CAPS.commits * 30), `reading commits… ${n}`));
+    const comRaw = await paged(commitsPath, token, Infinity, n => onProgress(58 + Math.min(30, n / CAPS.commits * 30), `reading commits… ${n}`));
     commitList = comRaw.map(c => ({ sha: (c.sha || "").slice(0, 7),
       date: c.commit?.author?.date || c.commit?.committer?.date,
       login: (c.author && c.author.login) || c.commit?.author?.name || "?",
