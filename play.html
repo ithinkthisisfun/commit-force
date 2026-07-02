@@ -205,6 +205,14 @@ const SFX = (()=>{
         const g=ctx.createGain(); g.gain.setValueAtTime(0.0001,tt); g.gain.exponentialRampToValueAtTime(0.24,tt+0.02); g.gain.setValueAtTime(0.24,tt+Math.max(0.03,dur-0.06)); g.gain.exponentialRampToValueAtTime(0.0001,tt+dur);
         o.connect(g); o2.connect(g); g.connect(master); o.start(tt); o2.start(tt); o.stop(tt+dur+0.02); o2.stop(tt+dur+0.02); };
       blast(t,0.12); blast(t+0.18,0.12); blast(t+0.42,0.55); },
+    timewarp(){ if(!started||muted) return; const t=ctx.currentTime;   // whoosh when we skip a quiet stretch of history
+      const ns=ctx.createBufferSource(); ns.buffer=noise(0.55);
+      const bp=ctx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.setValueAtTime(360,t); bp.frequency.exponentialRampToValueAtTime(3200,t+0.42); bp.Q.value=0.9;
+      const g=ctx.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.16,t+0.05); g.gain.exponentialRampToValueAtTime(0.0001,t+0.52);
+      ns.connect(bp); bp.connect(g); g.connect(master); ns.start(t); ns.stop(t+0.54);
+      const o=ctx.createOscillator(); o.type="triangle"; o.frequency.setValueAtTime(300,t); o.frequency.exponentialRampToValueAtTime(1500,t+0.42);
+      const og=ctx.createGain(); og.gain.setValueAtTime(0.0001,t); og.gain.exponentialRampToValueAtTime(0.08,t+0.05); og.gain.exponentialRampToValueAtTime(0.0001,t+0.46);
+      o.connect(og); og.connect(master); o.start(t); o.stop(t+0.48); },
     stopMusic(){ musicOn=false; if(started) musicGain.gain.setTargetAtTime(0,ctx.currentTime,0.4); },
     startMusic(){ musicOn=true; if(started&&!muted) musicGain.gain.setTargetAtTime(0.16,ctx.currentTime,0.3); },
     victory(){ if(!started||muted) return; const t=ctx.currentTime;   // little triumphant jingle
@@ -344,6 +352,21 @@ let endStage="run", safe=null, safeShots=[], finishFlagX=0, flagRaise=0;   // ru
 let joins=[], seenNames=new Set();   // "xxx joined..." feed for first-seen contributors
 let fireRockets=[], fireParts=[], fwTimer=0;
 const FWC=["#ff4d4d","#ffd24d","#4dff88","#4dd2ff","#b84dff","#ff4db8","#ffffff","#ff9a3d"];
+// ---- timeline clock: live date readout, dashed "time seams", real-time progress -----------
+const TL=(LV.timeline && Array.isArray(LV.timeline.breaks) && LV.timeline.breaks.length) ? LV.timeline : null;
+const SKIPS=TL ? TL.skips.slice().sort((a,b)=>a.t0-b.t0) : [];
+for(const s of SKIPS){ s.x0=START_X+s.t0*TRACK_LEN; s.x1=START_X+s.t1*TRACK_LEN; s.c0=s.x0<=W/2; s.c1=s.x1<=W/2; }   // world x of each dashed edge + "swept past center yet?"
+const T_START=TL?TL.breaks[0].ms:0, T_END=TL?TL.breaks[TL.breaks.length-1].ms:0, T_SPAN=Math.max(1,T_END-T_START);
+let curDateMs=null, timeFlash=0, skipText="", skipSub="", skipT=0;
+function fmtDate(ms){ const d=new Date(ms); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function tToMs(t){ if(!TL) return null; const b=TL.breaks;                 // invert frac(): track position -> real time, piecewise-linear between knots
+  if(t<=b[0].t) return b[0].ms; if(t>=b[b.length-1].t) return b[b.length-1].ms;
+  let lo=0,hi=b.length-1; while(lo+1<hi){ const m=(lo+hi)>>1; if(b[m].t<=t) lo=m; else hi=m; }
+  const dt=b[hi].t-b[lo].t, f=dt>0?(t-b[lo].t)/dt:0; return b[lo].ms+f*(b[hi].ms-b[lo].ms); }
+function skipLabel(days){ if(days>=365) return (days>=730?Math.round(days/365)+" years":"a year")+" skipped";
+  if(days>=60) return Math.round(days/30)+" months skipped"; if(days>=21) return Math.round(days/7)+" weeks skipped"; return days+" days skipped"; }
+function gapShort(days){ if(days>=365) return days>=730?Math.round(days/365)+"yr":"1yr"; if(days>=60) return Math.round(days/30)+"mo"; if(days>=14) return Math.round(days/7)+"w"; return days+"d"; }
+function fireSkip(s){ timeFlash=1; skipText=skipLabel(s.gapDays); skipSub=fmtDate(s.from)+"  →  "+fmtDate(s.to); skipT=100; shake=Math.max(shake,3); SFX.timewarp(); }
 
 function burst(x,y,c,n=12,spd=2.6){ for(let i=0;i<n;i++) fx.push({x,y,vx:(Math.random()*2-1)*spd,vy:(Math.random()*2-1)*spd-1,life:16+Math.random()*12,color:c}); }
 function debris(x,y,n=10){ for(let i=0;i<n;i++) fx.push({x,y,vx:(Math.random()*2-1)*3.2,vy:-Math.random()*4.5-1,life:28+Math.random()*14,color:Math.random()<0.5?"#7a531f":"#4a3038"}); }
@@ -578,6 +601,13 @@ function update(){
   if(bannerT>0) bannerT--;
   zoom+=((bossFight?1.15:1)-zoom)*0.05;                    // gentle zoom -- leave room for the small-truck action beside the boss
 
+  // timeline clock: map the front runner's track position back to a real date; flash as each
+  // dashed seam edge sweeps past screen center (a compressed quiet stretch getting crossed)
+  if(TL){ curDateMs=tToMs(Math.max(0,Math.min(1,(frontX-START_X)/TRACK_LEN))); const mid=W/2;
+    for(const s of SKIPS){ if(!s.c0 && s.x0-camX<=mid){ s.c0=true; fireSkip(s); }
+      if(!s.c1 && s.x1-camX<=mid){ s.c1=true; fireSkip(s); } } }
+  if(skipT>0) skipT--; if(timeFlash>0) timeFlash=Math.max(0,timeFlash-0.045);
+
   if(!finished && frontX>FLAG_X){ finished=true; endStage="safe"; shake=6; SFX.stopMusic();
     safe={ x:Math.max(...actors.map(a=>a.x))+58, t:0, dur:170, exploding:false, boomT:0 }; safeShots=[]; banner="CRACK THE VAULT"; bannerT=170; }
   if(finished){
@@ -656,6 +686,8 @@ function reset(){ for(const k in pressed) delete pressed[k];   // else 'r' stays
   anchorX=START_X; mode="auto"; finished=false; finishT=0; camX=0; thrown=0; starPtr=0; resolved=oBattled=oIdle=0; prMerged=prRejected=0;
   fx=[]; stars=[]; cards=[]; planesActive=[]; missiles=[]; splats=[]; fireRockets=[]; fireParts=[]; fwTimer=0; lastEvent=""; tickerText=""; tickerHold=0; lastOoh=0; banner=""; bannerT=0; zoom=1;
   parade=[]; paradeQueue=[]; paradeOn=false; paradeTick=0;
+  curDateMs=null; timeFlash=0; skipText=""; skipSub=""; skipT=0;
+  for(const s of SKIPS){ s.c0=s.x0<=W/2; s.c1=s.x1<=W/2; }
   SFX.resume(); SFX.startMusic(); }
 
 // ---- rendering ----------------------------------------------------------
@@ -859,13 +891,25 @@ function drawHUD(){
   g.fillStyle="#e6c36a"; g.fillText("OPEN "+(oBattled+oIdle)+"/"+LV.counts.open,W*0.62,11);
   g.fillStyle="#f5d76e"; g.fillText("★"+thrown+"/"+LV.counts.commits,W*0.79,11);
   g.textAlign="right"; g.fillStyle=mode==="play"?"#ff8a8a":"#7a9ad8"; g.fillText((SFX.isMuted()?"muted ":"")+(mode==="play"?"[YOU]":"[AUTO]"),W-6,11); g.textAlign="left";
+  if(TL && curDateMs!=null){ g.textAlign="right"; g.font="8px 'Courier New',monospace";   // live history date; glows while a skip flashes
+    g.fillStyle=skipT>0?"#bfeaff":"#8a9aa2"; g.fillText(fmtDate(curDateMs),W-6,24); g.textAlign="left"; g.font="8px 'Courier New',monospace"; }
   // bottom ticker: always visible; shows the last CONQUERED issue (neutral label until the first one)
   { const line=tickerText||("▶  "+LV.repo); px(0,H-24,W,13,"rgba(10,6,8,0.82)");
     g.font="8px 'Courier New',monospace"; g.textAlign="left"; g.fillStyle=tickerText?tickerCol:"#7a6a6e";
     let t=line; while(g.measureText(t).width>W-12 && t.length>6) t=t.slice(0,-1); if(t!==line)t=t.slice(0,-1)+"…";
     g.fillText(t,6,H-15); }
-  const fxp=Math.max(...actors.map(a=>a.x)), p=Math.max(0,Math.min(1,(fxp-START_X)/(FLAG_X-START_X)));
-  px(6,H-8,W-12,3,"#2a141a"); px(6,H-8,(W-12)*p,3,"#c92b2b");
+  // bottom progress: the WHOLE (uncompressed) calendar. The fill tracks the live date, so it leaps
+  // ahead across the cyan bands -- the compressed quiet stretches -- each time you cross a seam.
+  const barX=6, barW=W-12, barY=H-8; px(barX,barY,barW,3,"#2a141a");
+  if(TL && curDateMs!=null){
+    for(const s of SKIPS){ const a0=(s.from-T_START)/T_SPAN, a1=(s.to-T_START)/T_SPAN;   // shade each compressed span
+      px(barX+barW*a0, barY, Math.max(1,barW*(a1-a0)), 3, "#264a58"); }
+    const pt=Math.max(0,Math.min(1,(curDateMs-T_START)/T_SPAN));
+    px(barX,barY,barW*pt,3,"#c92b2b"); px(barX+barW*pt-1,barY-1,2,5, skipT>0?"#bfeaff":"#e04a4a");   // fill + play-head (glows on a jump)
+  } else {
+    const fxp=Math.max(...actors.map(a=>a.x)), p=Math.max(0,Math.min(1,(fxp-START_X)/(FLAG_X-START_X)));
+    px(barX,barY,barW*p,3,"#c92b2b");
+  }
   if(lastEvent){ g.font="7px 'Courier New',monospace"; g.fillStyle="#9a6a72"; g.textAlign="center"; g.fillText(lastEvent,W/2,23); g.textAlign="left"; }
   g.font="8px 'Courier New',monospace"; g.textAlign="left";               // "xxx joined..." feed (left, scrolling up)
   for(const j of joins){ g.globalAlpha=Math.min(1,j.life/45); g.fillStyle="hsl("+j.hue+" 85% 66%)"; g.fillText(j.name+" joined…", 8, j.y); } g.globalAlpha=1;
@@ -891,7 +935,20 @@ function drawHUD(){
     g.fillStyle="#e6c36a"; g.font="8px 'Courier New',monospace"; g.fillText(LV.counts.open+" issues still open",W/2,H*0.4+16);
     g.fillStyle="#9a6a72"; g.fillText("press R to run it again",W/2,H*0.4+30); g.textAlign="left"; g.globalAlpha=1;
   }
+  if(skipT>0){ const a=Math.min(1,skipT/22); g.globalAlpha=a; g.textAlign="center";   // "we fast-forwarded through a quiet stretch"
+    g.font="14px 'Courier New',monospace"; g.fillStyle="#dff4ff"; g.fillText("» "+skipText,W/2,H*0.32);
+    g.font="8px 'Courier New',monospace"; g.fillStyle="#8fbccc"; g.fillText(skipSub,W/2,H*0.32+15);
+    g.textAlign="left"; g.globalAlpha=1; }
 }
+
+// a skipped quiet stretch, collapsed to a narrow slice: dashed brackets over a dimmed band, gap labelled
+function dashV(x,col){ g.fillStyle=col; const xi=x|0; for(let yy=(time>>1)%8; yy<H; yy+=8) g.fillRect(xi,yy,1,5); }   // dashes drift downward
+function drawSeams(){ for(const s of SKIPS){ let x0=s.x0-camX, x1=s.x1-camX; if(x1<x0+TS) x1=x0+TS;   // never thinner than one ground block
+  if(x1<-24||x0>W+24) continue;
+  g.globalAlpha=0.5; g.fillStyle="#0a0812"; g.fillRect(x0|0,0,(x1-x0)|0,H); g.globalAlpha=1;            // dim the collapsed slice
+  dashV(x0,"#93c4d6"); dashV(x1,"#93c4d6");
+  g.globalAlpha=0.9; g.fillStyle="#7fb0c2"; g.font="7px 'Courier New',monospace"; g.textAlign="center";
+  g.fillText(gapShort(s.gapDays),(x0+x1)/2,H*0.46); g.textAlign="left"; g.globalAlpha=1; } }
 
 function render(){
   drawBG();
@@ -914,7 +971,10 @@ function render(){
   for(const pl of planesActive) drawPlane(pl);
   for(const m of missiles) drawMissile(m);
   for(const p of fx){ g.globalAlpha=Math.max(0,p.life/24); px(p.x-camX,p.y-camY,2,2,p.color); } g.globalAlpha=1;
+  drawSeams();
   drawCards(); g.restore(); drawHUD();
+  if(timeFlash>0){ g.globalAlpha=0.26*timeFlash; g.fillStyle="#bfeaff"; g.fillRect(0,0,W,H);   // time-warp wash + scan streaks
+    g.globalAlpha=0.32*timeFlash; g.fillStyle="#eafaff"; for(let i=0;i<16;i++){ const yy=(i*29+time*13)%H; g.fillRect(0,yy,W,1); } g.globalAlpha=1; }
 }
 
 let acc=0,last=performance.now(); const STEP=1000/60;

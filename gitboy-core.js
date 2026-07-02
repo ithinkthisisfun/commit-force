@@ -62,15 +62,25 @@ export function assembleLevel(repo, { issues = [], prs = [], commits = [], relea
   const t0 = workEpochs.length ? workEpochs[0] : (allEpochs.length ? Math.min(...allEpochs) : now);
   const t1 = workEpochs.length ? workEpochs[workEpochs.length - 1] : (allEpochs.length ? Math.max(...allEpochs) : now);
   const span = Math.max(1, t1 - t0);
-  let frac;
+  let frac, timeline;
   if (workEpochs.length < 2) {
     frac = ms => (ms - t0) / span;
+    timeline = { breaks: [{ t: 0, ms: t0 }, { t: 1, ms: t1 }], skips: [] };
   } else {
     const ev = workEpochs;
     const gaps = []; for (let i = 1; i < ev.length; i++) gaps.push(ev[i] - ev[i - 1]);
     const med = [...gaps].sort((a, b) => a - b)[gaps.length >> 1] || DAY;
     const CAP = Math.max(3 * DAY, med * 4);
-    const C = [0]; for (let i = 1; i < ev.length; i++) C[i] = C[i - 1] + Math.min(ev[i] - ev[i - 1], CAP);
+    // gaps longer than CAP are "skips" (a quiet stretch). Normal gaps keep their real (sub-CAP)
+    // width on the axis, but each skip collapses to a tiny fixed SEAM so a multi-year silence
+    // becomes ~one ground-block of track -- the player brackets it with dashed lines instead of
+    // making you run across dead space. SEAM scales with the non-skip span so the seam stays
+    // ~1-2 blocks wide on the default track length no matter how busy the repo is.
+    let base = 0;
+    for (let i = 1; i < ev.length; i++) { const gap = ev[i] - ev[i - 1]; if (gap <= CAP) base += gap; }
+    const SEAM = Math.max(HOUR, base * 0.0018);
+    const wid = [0]; for (let i = 1; i < ev.length; i++) { const gap = ev[i] - ev[i - 1]; wid[i] = gap > CAP ? SEAM : gap; }
+    const C = [0]; for (let i = 1; i < ev.length; i++) C[i] = C[i - 1] + wid[i];
     const totalC = C[C.length - 1] || 1;
     frac = x => {
       if (x <= ev[0]) return 0;
@@ -78,8 +88,17 @@ export function assembleLevel(repo, { issues = [], prs = [], commits = [], relea
       let lo = 0, hi = ev.length - 1;
       while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (ev[m] <= x) lo = m; else hi = m; }
       const seg = ev[hi] - ev[lo], f = seg > 0 ? (x - ev[lo]) / seg : 0;
-      return (C[lo] + f * Math.min(seg, CAP)) / totalC;
+      return (C[lo] + f * wid[hi]) / totalC;
     };
+    // timeline metadata for playback: `breaks` are knots mapping track position (t) -> real time
+    // (ms), so the player can show a live date; `skips` are the gaps that got clamped (realGap >
+    // CAP) -- the player flashes as the runner crosses one, since a lot of real time passes there
+    // in very little track. The map is piecewise-linear between knots, exactly inverting frac().
+    timeline = { breaks: ev.map((ms, i) => ({ t: C[i] / totalC, ms })), skips: [] };
+    for (let i = 1; i < ev.length; i++) {
+      const gap = ev[i] - ev[i - 1];
+      if (gap > CAP) timeline.skips.push({ t0: C[i - 1] / totalC, t1: C[i] / totalC, from: ev[i - 1], to: ev[i], gapDays: Math.round(gap / DAY) });
+    }
   }
 
   const obstacles = issues.map(issue => {
@@ -148,7 +167,7 @@ export function assembleLevel(repo, { issues = [], prs = [], commits = [], relea
       prs: planes.length, prMerged: planes.filter(p => p.state === "merged").length, prRejected: planes.filter(p => p.state === "rejected").length,
       releases: rel.length, realOpen, realClosed,
     },
-    heroes, lead, obstacles, stars, planes, releases: rel,
+    heroes, lead, obstacles, stars, planes, releases: rel, timeline,
   };
 }
 
