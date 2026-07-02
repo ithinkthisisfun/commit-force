@@ -199,7 +199,15 @@ const SFX = (()=>{
         o.connect(g); g.connect(master); o.start(tt); o.stop(tt+0.34);
         const b=ctx.createOscillator(); b.type="triangle"; b.frequency.value=130.81*Math.pow(2,(s%12)/12);
         const bg=ctx.createGain(); bg.gain.setValueAtTime(0.0001,tt); bg.gain.exponentialRampToValueAtTime(0.14,tt+0.02); bg.gain.exponentialRampToValueAtTime(0.0001,tt+0.32);
-        b.connect(bg); bg.connect(master); b.start(tt); b.stop(tt+0.34); }); },
+        b.connect(bg); bg.connect(master); b.start(tt); b.stop(tt+0.34); });
+      // resolve up to the tonic and hold it for a measure
+      const tt=t+0.9, ln=1.6;
+      const o=ctx.createOscillator(); o.type="square"; o.frequency.value=1046.5;   // C6 tonic
+      const g=ctx.createGain(); g.gain.setValueAtTime(0.0001,tt); g.gain.exponentialRampToValueAtTime(0.2,tt+0.03); g.gain.setValueAtTime(0.2,tt+ln*0.6); g.gain.exponentialRampToValueAtTime(0.0001,tt+ln);
+      o.connect(g); g.connect(master); o.start(tt); o.stop(tt+ln+0.05);
+      const b=ctx.createOscillator(); b.type="triangle"; b.frequency.value=130.81;  // C3 bass
+      const bg=ctx.createGain(); bg.gain.setValueAtTime(0.0001,tt); bg.gain.exponentialRampToValueAtTime(0.16,tt+0.03); bg.gain.setValueAtTime(0.16,tt+ln*0.6); bg.gain.exponentialRampToValueAtTime(0.0001,tt+ln);
+      b.connect(bg); bg.connect(master); b.start(tt); b.stop(tt+ln+0.05); },
   };
 })();
 
