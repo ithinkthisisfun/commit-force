@@ -619,6 +619,8 @@ function updateActor(a,frontX){
       for(const p of platforms){ if(a.x>p.x0-26 && a.x<p.x0+8 && a.y>p.y+2){ doJump(a); a.jumpCd=22; break; } }
     } else if(inZone(a.x)&&a.onGround&&a.jumpCd<=0&&Math.random()<0.045){ doJump(a); a.jumpCd=18; }
     if(a.onGround && a.jumpCd<=0){ const rise=terrainH(a.x+9)-terrainH(a.x); if(rise>=3){ a.vy=-Math.min(9,4.6+rise*0.35); a.onGround=false; a.jumpCd=9; } }   // hop up the terrain stairs
+    if(a.onGround && a.jumpCd<=0 && Math.abs(a.vx)<0.7 && Math.abs(dx)<8){   // never idle -- an antsy dude bounces in place
+      a.vy=-3.2-Math.random()*1.6; a.vx+=(Math.random()*2-1)*1.6; a.onGround=false; a.jumpCd=8+((Math.random()*12)|0); }
   }
   if(a.act!=="idle"){ a.actT--; if(a.act==="kick") a.vy=Math.min(MAXFALL,a.vy+GRAV*0.4);
     if(a.actT<=0||(a.act==="kick"&&a.onGround)) a.act="idle"; }
