@@ -135,25 +135,26 @@ export async function getRepoInfo(repoRaw, token = "") {
 // Fetch a repo's activity within [start, end] (ms; default = last year to now) and build a level.
 // Windowed by last-updated (so an old issue that's still being discussed stays in) and capped hard --
 // no counting, no most-discussed fold-in. The core positions it all linearly, with no time-warps.
-export async function buildLevelFromGitHub(repoRaw, { token = "", branch = "", start, end, onProgress = () => {} } = {}) {
+export async function buildLevelFromGitHub(repoRaw, { token = "", branch = "", start, end, uncapped = false, onProgress = () => {} } = {}) {
   const repo = normalizeRepo(repoRaw);
   if (!repo.includes("/")) throw new Error("enter a repo as owner/name");
   if (end == null) end = Date.now();
   if (start == null) start = end - 365 * 86400000;
   const startISO = new Date(start).toISOString(), endISO = new Date(end).toISOString();
   const updatedOf = x => new Date(x.updated_at || x.created_at).getTime();
+  const cap = n => uncapped ? Infinity : n;   // "GO ANYWAY" -> pull EVERYTHING in the range (the rate-limit guard still applies)
 
   // The /issues endpoint returns PRs too — filter them out with .pull_request. `since` filters by
   // last-updated server-side; pagedWindow keeps only [start, end].
   onProgress(8, "reading issues…");
   const issuesRaw = await pagedWindow(`/repos/${repo}/issues?state=all&sort=updated&direction=desc&since=${encodeURIComponent(startISO)}`,
-    token, CAPS.issues + 60, start, end, updatedOf, n => onProgress(8 + Math.min(20, n / CAPS.issues * 20), `reading issues… ${n}`));
+    token, cap(CAPS.issues + 60), start, end, updatedOf, n => onProgress(8 + Math.min(20, n / CAPS.issues * 20), `reading issues… ${n}`));
   const mapIssue = i => ({ number: i.number, title: i.title, url: i.html_url, state: i.state, labels: i.labels || [],
     author: i.user ? { login: i.user.login } : null, comments: i.comments, createdAt: i.created_at, updatedAt: i.updated_at, closedAt: i.closed_at });
-  const issues = issuesRaw.filter(i => !i.pull_request).slice(0, CAPS.issues).map(mapIssue);
+  const issues = issuesRaw.filter(i => !i.pull_request).slice(0, cap(CAPS.issues)).map(mapIssue);
 
   onProgress(34, "reading pull requests…");
-  const prsRaw = await pagedWindow(`/repos/${repo}/pulls?state=all&sort=updated&direction=desc`, token, CAPS.prs, start, end, updatedOf);
+  const prsRaw = await pagedWindow(`/repos/${repo}/pulls?state=all&sort=updated&direction=desc`, token, cap(CAPS.prs), start, end, updatedOf);
   const prs = prsRaw.map(p => ({ number: p.number, title: p.title, state: p.state, author: p.user ? { login: p.user.login } : null,
     createdAt: p.created_at, closedAt: p.closed_at, mergedAt: p.merged_at }));
 
@@ -170,7 +171,7 @@ export async function buildLevelFromGitHub(repoRaw, { token = "", branch = "", s
   let commitList = [], commitError = null;
   try {
     const commitsPath = `/repos/${repo}/commits?since=${encodeURIComponent(startISO)}&until=${encodeURIComponent(endISO)}${branch ? `&sha=${encodeURIComponent(branch)}` : ""}`;
-    const comRaw = await paged(commitsPath, token, CAPS.commits, n => onProgress(58 + Math.min(30, n / CAPS.commits * 30), `reading commits… ${n}`));
+    const comRaw = await paged(commitsPath, token, cap(CAPS.commits), n => onProgress(58 + Math.min(30, n / CAPS.commits * 30), `reading commits… ${n}`));
     commitList = comRaw.map(c => ({ sha: (c.sha || "").slice(0, 7),
       date: c.commit?.author?.date || c.commit?.committer?.date,
       login: (c.author && c.author.login) || c.commit?.author?.name || "?",

@@ -266,6 +266,8 @@ const LV=bgMode?FALLBACK:(STORED||((window.GITBOY_LEVEL&&!window.__noLevel)?wind
   const u=new URL(".", location.href);           // -> .../commit-force/  (the loader)
   u.searchParams.set("repo", LV.repo);
   if(LV.branch) u.searchParams.set("branch", LV.branch);
+  if(LV.span&&LV.span.start) u.searchParams.set("start", LV.span.start.slice(0,10));   // carry the date window so a shared game replays the same range
+  if(LV.span&&LV.span.end)   u.searchParams.set("end",   LV.span.end.slice(0,10));
   const url=u.toString();
   btn.onclick=async()=>{
     if(navigator.share){ try{ await navigator.share({title:"Commit Force", text:"Commit Force — "+LV.repo+" as a 16-bit gauntlet", url}); return; }catch(e){ if(e&&e.name==="AbortError") return; } }

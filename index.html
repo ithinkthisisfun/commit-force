@@ -110,10 +110,10 @@ const repo=$("repo"), go=$("go"), bar=$("bar"), fill=$("fill"), status=$("status
 const DAY_MS = 86400000, isoDay = ms => new Date(ms).toISOString().slice(0, 10);
 { const q = new URLSearchParams(location.search);
   endInput.value = q.get("end") || isoDay(Date.now());
-  startInput.value = q.get("start") || isoDay(Date.now() - 365 * DAY_MS); }
+  startInput.value = q.get("start") || isoDay(Date.now() - 14 * DAY_MS); }
 // [start, end] in ms; the end date is inclusive (whole day), so push it to the next midnight.
 function winDates(){ const s = Date.parse(startInput.value), e = Date.parse(endInput.value);
-  return { start: Number.isFinite(s) ? s : Date.now() - 365 * DAY_MS, end: Number.isFinite(e) ? e + DAY_MS : Date.now() }; }
+  return { start: Number.isFinite(s) ? s : Date.now() - 14 * DAY_MS, end: Number.isFinite(e) ? e + DAY_MS - 1 : Date.now() }; }   // end = whole end-day; -1 so isoDay round-trips
 // suggested-repos dropdown: seed with solid picks (works even when rate-limited), then
 // fill from the Search API's "trending" (most-starred repos created recently)
 const suggest = $("suggest");
@@ -281,7 +281,7 @@ async function start(){
   busy = true; go.disabled = true; go.textContent = "LOADING…"; $("warn").textContent = ""; bar.style.display = "block"; fill.style.width = "3%"; status.textContent = "contacting github…";
   try {
     const level = await buildLevelFromGitHub(r, {
-      branch: branchSel.value, start: w.start, end: w.end,
+      branch: branchSel.value, start: w.start, end: w.end, uncapped: sizeOverride,
       onProgress: (p, m) => { fill.style.width = Math.max(3, p) + "%"; if (m) status.textContent = m; },
     });
     sessionStorage.setItem("gitboy_lastrepo", level.repo);
