@@ -129,9 +129,10 @@ export function assembleLevel(repo, { issues = [], prs = [], commits = [], relea
     .map(r => ({ tag: r.tag, name: r.name || r.tag, pre: !!r.pre, t: frac(r.ms) }))
     .sort((a, b) => a.t - b.t);
 
+  // the boss is the most-discussed issue, PERIOD (open or closed). If it never closed, the rig escapes
+  // in-game ("we didn't blow it up last sprint...") -- see the flee/boom split in play.html.
   let boss = null;
-  for (const o of obstacles) if (o.state === "closed" && (!boss || o.comments > boss.comments)) boss = o;
-  if (!boss) for (const o of obstacles) if (!boss || o.comments > boss.comments) boss = o;
+  for (const o of obstacles) if (!boss || o.comments > boss.comments) boss = o;
   if (boss && boss.comments >= 2) boss.boss = true;
 
   const closedN = obstacles.filter(o => o.state === "closed").length;

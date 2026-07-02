@@ -271,6 +271,7 @@ const GROUND_Y=1000, camY=GROUND_Y-(H-52), START_X=150;
 const RUNSPEED=3.6, DURATION_SEC=58, TRACK_LEN=RUNSPEED*60*DURATION_SEC;
 const MINGAP=22, CLUSTER_GAP=24, MAXTRUCKS=10;
 const TRUCK_LEAD=Math.round(W*1.0+60);   // world-px head start: dispatch this far ahead of a truck's due point so it slides in from off-screen (now a longer glide to the ~40% engage point)
+const BOSS_BULLET=240;   // boss: 4s bullet-time, then a running battle (open boss escapes, closed boss dies)
 const TRUCK_ROOF=GROUND_Y-22, TS=16;
 
 const OBS=LV.obstacles.map(o=>({ ...o }));
@@ -292,8 +293,9 @@ function initTruck(o){ o.spawned=false; o.done=false; o.phase="pending"; o.rider
   if(o.boss) o.roof=GROUND_Y-25;                            // war rig: crew stand on the long tank tops
   // on-screen battle ~ the issue's open->close lifetime (floor so short-lived aren't instant, cap for pacing)
   let dur=Math.max(55, Math.min(170, Math.round(55 + (o.life||0)*900)));
-  // boss brawl runs roughly as long as the issue was actually open -- a long-lived issue is a long, drifting fight
-  o.dur = o.boss ? Math.min(1600, Math.round(320 + (o.life||0)*2200)) : dur; }   // ~5s (quick) up to ~27s (open most of the repo's life)
+  // boss fight length scales with how discussed the issue is (works for open OR closed bosses); the OUTCOME
+  // (defeated vs escaped) is decided by whether the issue actually closed (o.resolves), not the length.
+  o.dur = o.boss ? Math.min(1300, Math.round(480 + (o.comments||0)*12)) : dur; }   // ~8s (few comments) .. ~22s (heavily discussed)
 OBS.forEach(initTruck);
 const BOSS=OBS.find(o=>o.boss)||null;                      // at most one boss truck
 
@@ -472,9 +474,9 @@ function update(){
 
   const runners=actors.filter(a=>!a.riding);
   const frontX=(runners.length?Math.max(...runners.map(a=>a.x)):Math.max(...actors.map(a=>a.x)));
-  const bossFight=BOSS&&BOSS.phase==="battle";              // the boss brawl -- eased, not frozen, so the run keeps flowing
-  SFX.boss(bossFight);                                       // dread music during the boss fight
-  if(!finished) anchorX+=RUNSPEED*(bossFight?0.62:1);       // slow to ~60% (not a dead stop) so small trucks keep coming
+  const bossFight=BOSS&&BOSS.phase==="battle"&&BOSS.timer<BOSS_BULLET;   // bullet time: only the first 4s of the boss brawl
+  SFX.boss(BOSS&&BOSS.phase==="battle");                    // dread music through the whole boss battle
+  if(!finished) anchorX+=RUNSPEED*(bossFight?0.32:1);       // bullet-time slow-mo; snaps back to full speed for the running battle
 
   for(const a of actors) updateActor(a,frontX);
 
@@ -511,17 +513,24 @@ function update(){
         else o.vx=RUNSPEED;                          // hover by the pack until crew free up
       }
     } else if(o.phase==="battle"){
-      if(o.boss){ const drift=Math.sin(o.timer*0.045)*1.8 + Math.sin(o.timer*0.014+1)*1.1;   // the rig surges and falls back -- ebb & flow of the fight
-        o.vx+=((RUNSPEED*0.62 + drift) - o.vx)*0.06; }
-      else o.vx+=((bossFight?RUNSPEED*0.62:RUNSPEED)-o.vx)*0.1;   // keep pace with the (eased) pack
       o.timer++;
+      if(o.boss){
+        if(o.timer<BOSS_BULLET){ const drift=Math.sin(o.timer*0.045)*1.8 + Math.sin(o.timer*0.014+1)*1.1;  // bullet time: slow, swaying
+          o.vx+=((RUNSPEED*0.34 + drift) - o.vx)*0.06; }
+        else o.vx+=((RUNSPEED + Math.sin(o.timer*0.06)*1.3) - o.vx)*0.08;   // running battle: chase at full speed
+      } else o.vx+=((bossFight?RUNSPEED*0.32:RUNSPEED)-o.vx)*0.1;
       if(o.timer%14===0) o.riders.forEach(r=>{ r.act="punch"; r.actT=PUNCH_T; });
       if(o.timer%8===0) burst(o.x+8,o.roof+6,"#ffd",3,1.6);
       if(o.boss && o.timer>16 && o.timer%16===0){          // boss takes a beating: small blasts before it goes
         burst(o.x+(Math.random()*2-1)*22, o.roof+Math.random()*12, pick(["#ffd76e","#e33"]), 8, 2.6); gib(o.x+(Math.random()*2-1)*18,o.roof+6,4); shake=Math.max(shake,4); SFX.planeBoom(); }
       if(o.timer>=o.dur){
         const crew=o.riders;
-        if(o.resolves){ o.phase="boom"; o.boomT=0; SFX.explosion(); const big=o.boss?2:1; shake=9*big;
+        if(o.boss && !o.resolves){                          // the most-discussed issue is still OPEN -> the rig floors it and escapes right
+          o.phase="flee"; o.vx=RUNSPEED*1.3;
+          crew.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6; r.act="idle"; });
+          banner="BOSS ESCAPED!"; bannerT=200; SFX.bossHorn();
+          popCard(o,"ESCAPED!"); setTicker(o,"ESCAPED","#e6c36a"); lastEvent="BOSS #"+o.n+" got away!";
+        } else if(o.resolves){ o.phase="boom"; o.boomT=0; SFX.explosion(); const big=o.boss?2:1; shake=9*big;
           burst(o.x,GROUND_Y-14,"#ffd76e",26*big,4); burst(o.x,GROUND_Y-12,"#e33",20*big,3.6); debris(o.x,GROUND_Y-14,12*big);
           gib(o.x,o.roof+8,o.boss?26:10); addSplat(o.x);
           crew.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6.5; r.act="idle"; });
@@ -538,6 +547,9 @@ function update(){
           burst(bx,o.roof+Math.random()*16,pick(["#ffd76e","#e33","#fff"]),15,3.3); gib(bx,o.roof+8,5); shake=Math.max(shake,7); SFX.explosion(); }
         if(o.boomT>48){ o.done=true; resolved++; } }
       else if(o.boomT>18){ o.done=true; resolved++; } }
+    else if(o.phase==="flee"){                              // escaped boss floors it and exits right
+      o.vx += (RUNSPEED*2.4 - o.vx)*0.05;
+      if(o.x-camX > W+170){ o.done=true; oBattled++; } }
     else { // pass / out : roll through and exit left
       if(o.x<camX-80){ o.done=true; if(o.phase==="out") oBattled++; else oIdle++; }
     }
@@ -571,7 +583,7 @@ function update(){
 
   const focus=(mode==="play")?lead.x:(frontX-40);
   // once the boss brawl starts, center the whole war rig and hold it there until it's dead (never scrolls off-screen)
-  const framingBoss = BOSS && BOSS.hadRider && !BOSS.done;
+  const framingBoss = BOSS && BOSS.hadRider && !BOSS.done && BOSS.phase!=="flee";   // let go once it's fleeing, so it can exit right
   const tx=Math.max(0,Math.min(WORLD_END-W, framingBoss ? (BOSS.x - W/2) : (focus-W*0.2)));
   camX+=(tx-camX)*(framingBoss?0.055:0.14); if(shake>0) shake-=0.5;   // looser follow in the boss brawl so the rig visibly sways (but stays framed)
   for(const k in pressed) delete pressed[k];

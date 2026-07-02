@@ -120,12 +120,11 @@ export async function buildLevelFromGitHub(repoRaw, { token = "", limit = 100, c
   ];
 
   // The sample above is newest-first, and recent issues are often thinly commented — so on
-  // some repos nothing clears the boss bar. Pull the repo's most-DISCUSSED CLOSED issues
-  // (usually older) and fold them in, so there's always a strong boss candidate (the boss
-  // must be closed — it explodes when defeated).
+  // some repos nothing clears the boss bar. Pull the repo's most-DISCUSSED issues (open OR
+  // closed) and fold them in, so the boss (= most-commented issue, period) is always present.
   onProgress(28, "reading most-discussed…");
   try {
-    const hotRes = await gh(`/search/issues?q=${encodeURIComponent(`repo:${repo} type:issue state:closed`)}&sort=comments&order=desc&per_page=8`, token);
+    const hotRes = await gh(`/search/issues?q=${encodeURIComponent(`repo:${repo} type:issue`)}&sort=comments&order=desc&per_page=8`, token);
     const seen = new Set(issues.map(i => i.number));
     for (const i of (hotRes.items || [])) if (!i.pull_request && !seen.has(i.number)) { issues.push(mapIssue(i)); seen.add(i.number); }
   } catch (e) { if (e instanceof RateLimitError) throw e; }
