@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Force — Help</title>
+<meta name="description" content="What Commit Force is, why you'd want it, and how to get around GitHub rate limits by running it locally.">
+<meta name="theme-color" content="#c92b2b">
+<style>
+  :root{ --red:#c92b2b; --red2:#e04a4a; --ink:#e7b7bd; --panel:#1a0e12; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:#0a0608; color:var(--ink); font-family:"Courier New",monospace; }
+  body{ min-height:100vh; display:flex; align-items:flex-start; justify-content:center; padding:24px 0 48px; }
+  #card{ width:min(720px,92vw); background:var(--panel); border:3px solid #2a1015;
+    box-shadow:0 0 0 3px #000, 0 0 60px #000 inset; padding:26px 28px 30px; }
+  a.back{ display:inline-block; color:#c7b3b8; text-decoration:none; font-size:12px; letter-spacing:2px; margin-bottom:16px; }
+  a.back:hover{ color:var(--red2); }
+  h1{ margin:0 0 4px; font-size:33px; letter-spacing:3px; color:var(--red); text-shadow:3px 3px 0 #000, 0 0 18px rgba(201,43,43,.5); }
+  .sub{ margin:0 0 22px; font-size:12px; color:#c7b3b8; letter-spacing:2px; }
+  h2{ margin:26px 0 7px; font-size:16px; letter-spacing:2px; color:var(--red2); text-shadow:2px 2px 0 #000; }
+  p{ margin:0 0 10px; font-size:14px; line-height:1.65; color:#dcc7cc; }
+  code{ background:#0c0709; border:1px solid #3a1620; padding:1px 5px; font-size:13px; color:#ffd; }
+  a{ color:var(--red2); }
+  .cta{ display:inline-block; margin-top:8px; padding:11px 16px; background:var(--red); color:#fff; text-decoration:none;
+    letter-spacing:2px; font-size:14px; text-shadow:1px 1px 0 #000; box-shadow:0 4px 0 #7a1a1a; }
+  .cta:hover{ background:var(--red2); }
+  @media (max-width:480px){ #card{ padding:18px 16px 22px; } h1{ font-size:26px; } h2{ font-size:15px; } p{ font-size:13px; } }
+</style>
+</head>
+<body>
+<div id="card">
+  <a class="back" href="./">‹ BACK TO COMMIT FORCE</a>
+  <h1>COMMIT FORCE</h1>
+  <p class="sub">HELP &amp; FAQ</p>
+
+  <h2>What is this?</h2>
+  <p>A fun little app that turns your GitHub history into a 16-bit side-scroller. Point it at any public
+  repo and its issues, pull requests, and commits play out as a running gauntlet — issue-trucks to
+  battle, commit-stars flying overhead, pull-request airplanes, a boss fight, and a final vault to crack.</p>
+
+  <h2>Why do I want this?</h2>
+  <p>To amuse yourself, amaze your friends, and compare different teams. It's a weirdly satisfying way to
+  <em>see</em> how a project moves — a sleepy repo and a firehose look nothing alike, and putting two
+  teams over the same date range side by side tells you more than a chart ever will.</p>
+
+  <h2>How to run this</h2>
+  <p>Type a repo as <code>owner/name</code>, pick the branch where the work happened, choose a date
+  range, and hit <strong>GO</strong>. That's the whole thing. (If that already felt like a lot, this is
+  probably not the app for you — and that's okay.)</p>
+
+  <h2>Sharing</h2>
+  <p>The <strong>share</strong> button (top-right of the start screen) copies a link with your exact
+  options baked in — repo, branch, and dates — so a friend can open it and get the same level you did.
+  Share your masterpiece.</p>
+
+  <h2>Saving and Loading</h2>
+  <p>Building a level hits the GitHub API a fair bit (see <a href="#rate-limiting">Rate Limiting</a>
+  below), so once you've made one you like, hit <strong>⤓ SAVE</strong> in the game to download it as a
+  <code>.json</code> file. Later, use <strong>Load a .json file</strong> on the start screen to replay it
+  instantly — no GitHub, no rate limit, no waiting. If you plan to watch a level more than once, save it.</p>
+
+  <h2 id="rate-limiting">Rate Limiting</h2>
+  <p>Without a token, GitHub allows roughly <strong>60 API requests per hour, per IP address</strong> —
+  and that budget is shared by everyone behind your network. The catch: a <em>single</em> rendering can
+  spend a big chunk of it. The app pages through the repo's issues, pull requests, commits, branches, and
+  releases, which is easily dozens of requests for a busy repo. So just a few builds can use up your
+  hour's goodwill. If you hit the wall the app tells you roughly how many minutes until it resets — or you
+  can Save/Load instead of rebuilding, or run it locally for a much higher limit.</p>
+
+  <h2>Running it Locally</h2>
+  <p>The whole thing is static and fetches straight from your browser, so you can run your own copy and
+  use your own GitHub token for <strong>5000 requests/hour</strong> (and private repos too). In short:
+  clone the repo, serve the folder, drop a read-only token into a small local-only file, and go. The token
+  stays on your machine and only ever talks to <code>api.github.com</code> — there is deliberately no
+  token field on the hosted site, so nothing can leak or be turned on in production by accident.</p>
+  <p>The full step-by-step (and how the local-token file works) lives in the repo:</p>
+  <a class="cta" href="https://github.com/ithinkthisisfun/commit-force#run-locally-for-5000hr" target="_blank" rel="noreferrer">Read it on GitHub ›</a>
+</div>
+</body>
+</html>

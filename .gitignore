@@ -1,5 +1,3 @@
-# generated per-repo by build-level.mjs / server.mjs
-level-data.js
 # your local GitHub token for 5000/hr (copy of local-token.example.js) -- NEVER commit this
 local-token.js
 # saved/exported level bundles (users download these locally, don't commit)

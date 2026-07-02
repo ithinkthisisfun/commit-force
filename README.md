@@ -15,43 +15,39 @@ issue-trucks, flinging commit-stars, dodging PR airplanes — compressed into ~a
 | `play.html` | the game |
 | `gitboy-core.js` | the pure data → level transform (shared) |
 | `gitboy-github.js` | browser → GitHub fetch layer |
-| `build-level.mjs` | optional local `gh` CLI path (`node build-level.mjs owner/repo`) |
-| `server.mjs` | optional local static file server for previewing |
+| `server.mjs` | local dev server; also hands your `gh` token to the browser for 5000/hr (local only) |
+| `local-token.example.js` | template → copy to `local-token.js` to fetch with your own token |
 
 ## Run locally for 5000/hr
 
 The whole thing is static — clone it and serve the folder over HTTP. (ES modules don't
-load over `file://`, so you do need a server; any static server works.)
+load over `file://`, so you do need a server.) The bundled `server.mjs` is the easy path
+because it *also* gives you 5000/hr for free if you have the GitHub CLI:
 
 ```bash
 git clone https://github.com/ithinkthisisfun/commit-force
 cd commit-force
-
-# option A — the bundled zero-dependency Node server
-node server.mjs                 # -> http://localhost:8787/
-
-# option B — any static server you already have
-python3 -m http.server 8787     # -> http://localhost:8787/
-npx serve .                     # -> http://localhost:3000/
+gh auth login          # optional, once — for 5000/hr instead of anonymous 60/hr
+node server.mjs        # -> http://localhost:8787/   (needs Node v18+)
 ```
 
-Then open the URL, type a repo (e.g. `sveltejs/svelte`), pick a branch, and hit **GO**.
-All the fetching happens in your browser against `api.github.com`; the local server only
-hands over the HTML/JS. (`server.mjs` needs a reasonably recent Node — v18+.)
+Then open the URL, type a repo (e.g. `sveltejs/svelte`), pick a branch, and hit **GO**. All the
+fetching happens in **your browser** against `api.github.com`; the server only hands over the files.
+If you ran `gh auth login`, `server.mjs` reads your `gh auth token` and serves it to the browser as
+`local-token.js` — so every fetch uses your **5000/hr** limit (and can read private repos), with no
+PAT to create. The token is served only over `127.0.0.1`, never written to disk, and never deployed.
 
-**Want 5000/hr (and private repos)?** Drop a [read-only Personal Access Token](https://github.com/settings/tokens)
-(fine-grained: `Contents` = Read; classic: `repo` for private repos, no scopes for public) into a
-local-only file:
+**No `gh` (or a different static server)?** Drop a [read-only token](https://github.com/settings/tokens)
+into a local-only file instead:
 
 ```bash
 cp local-token.example.js local-token.js
 # then edit local-token.js:   window.__GH_TOKEN = "ghp_your_token_here";
 ```
 
-Reload your local copy and every fetch uses your token. `local-token.js` is **gitignored and
-stripped from the deploy**, so it stays on your machine and only ever goes to `api.github.com`.
-There is deliberately no token *field* on the page — nothing to leak, and nothing that could be
-accidentally enabled in production.
+Either way, `local-token.js` is **gitignored and stripped from the deploy**, and there is deliberately
+no token *field* on the page — nothing to leak, and nothing that could be accidentally enabled in
+production.
 
 ## Rate limits
 
@@ -61,21 +57,6 @@ a few builds; if you hit it, wait a few minutes). There is no token field or inp
 the app — the only way to authenticate is a local-only `local-token.js` that is never deployed.
 Want more? [Run it locally](#run-locally-for-5000hr) and drop in your own token — same code, your
 machine, your credential.
-
-## Optional: pre-bake a level with the `gh` CLI
-
-`build-level.mjs` fetches a repo through the **authenticated GitHub CLI** (much higher
-limits, and private repos work) and writes a `level-data.js` that sets
-`window.GITBOY_LEVEL`:
-
-```bash
-gh auth login                                       # once
-node build-level.mjs sveltejs/svelte --commits 400 --out level-data.js
-```
-
-To play that pre-baked level instead of using the loader, add
-`<script src="level-data.js"></script>` just before the game script in `play.html`, then
-open `play.html` directly.
 
 ## How a repo maps to the game
 
