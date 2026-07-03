@@ -135,11 +135,11 @@ const repo=$("repo"), go=$("go"), bar=$("bar"), fill=$("fill"), status=$("status
 // you create from local-token.example.js when running your own copy. It doesn't exist in prod, so
 // __GH_TOKEN is undefined there and TOKEN() is always "" -- the hosted site can't read or send a token.
 const TOKEN = () => { const t = window.__GH_TOKEN; return (t && t !== "PASTE PAT HERE") ? String(t).trim() : ""; };
-// DATE RANGE: default to the last year (end = today, start = a year ago); prefill from ?start/?end.
+// DATE RANGE: default to the last two weeks (end = today, start = 14 days ago); prefill from ?start/?end.
+const Q = new URLSearchParams(location.search);
 const DAY_MS = 86400000, isoDay = ms => new Date(ms).toISOString().slice(0, 10);
-{ const q = new URLSearchParams(location.search);
-  endInput.value = q.get("end") || isoDay(Date.now());
-  startInput.value = q.get("start") || isoDay(Date.now() - 14 * DAY_MS); }
+endInput.value = Q.get("end") || isoDay(Date.now());
+startInput.value = Q.get("start") || isoDay(Date.now() - 14 * DAY_MS);
 // [start, end] in ms; the end date is inclusive (whole day), so push it to the next midnight.
 function winDates(){ const s = Date.parse(startInput.value), e = Date.parse(endInput.value);
   return { start: Number.isFinite(s) ? s : Date.now() - 14 * DAY_MS, end: Number.isFinite(e) ? e + DAY_MS - 1 : Date.now() }; }   // end = whole end-day; -1 so isoDay round-trips
@@ -157,11 +157,10 @@ const cachedSuggest = (() => { try { return JSON.parse(sessionStorage.getItem("c
 if (cachedSuggest && cachedSuggest.length) fillSuggest(cachedSuggest);
 else getSuggestedRepos().then(list => { if (!list.length) return; try { sessionStorage.setItem("cf_suggest", JSON.stringify(list)); } catch {} fillSuggest(list); }).catch(() => {});
 repo.value = sessionStorage.getItem("gitboy_lastrepo") || "";
-// shareable link: ?repo=owner/name&branch=main[&issues=N&commits=N] — prefill + auto-play
+// shareable link: ?repo=owner/name&branch=main — prefill + auto-play
 let autoShare = null;
-{ const q = new URLSearchParams(location.search); const qr = (q.get("repo") || "").trim();
-  if (qr) { repo.value = qr;
-    autoShare = { branch: (q.get("branch") || "").trim() }; } }
+const qr = (Q.get("repo") || "").trim();
+if (qr) { repo.value = qr; autoShare = { branch: (Q.get("branch") || "").trim() }; }
 // pull a branch out of a pasted /tree/<branch> URL (branch names may contain slashes)
 const branchHint = s => { const m = (s || "").match(/github\.com[/:][^/]+\/[^/]+\/tree\/([^?#]+)/i); return m ? decodeURIComponent(m[1].replace(/\/+$/, "")) : ""; };
 repo.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); (repoOk && branchesOk) ? start() : doCheck(); } });
@@ -186,12 +185,14 @@ const branchSel = $("branch"), spin = $("spin");
 let repoOk = false, branchesOk = false, checkSeq = 0, sizeOverride = false;
 const setGo = () => { go.disabled = !(repoOk && branchesOk); };
 go.disabled = true;
+// reset lookup state (repo/branch no longer verified) -- shared by doCheck's start and a fresh keystroke
+function clearLookup(){ repoOk = branchesOk = false; sizeOverride = false; go.textContent = "GO"; setGo();
+  branchSel.innerHTML = ""; branchSel.disabled = true; err.textContent = ""; $("warn").textContent = ""; }
 const rateMsg = e => `⏳ GitHub rate limit hit (60/hr) — try again in ~${Math.max(1, Math.round((e.resetMs - Date.now()) / 60000))} min`;
 async function doCheck() {
   const auto = autoShare; autoShare = null;   // one-shot: a shared ?repo= link auto-plays on success
   const norm = normalizeRepo(repo.value.trim());
-  repoOk = branchesOk = false; sizeOverride = false; go.textContent = "GO"; setGo();
-  branchSel.innerHTML = ""; branchSel.disabled = true; err.textContent = ""; $("warn").textContent = "";
+  clearLookup();
   if (!norm.includes("/") || norm.split("/").some(p => !p)) { spin.style.display = "none"; status.textContent = repo.value.trim() ? "enter a repo as owner/name" : ""; return; }
   const my = ++checkSeq;
 
@@ -278,8 +279,7 @@ $("shareTop").onclick = async () => {
 };
 // typing a new repo invalidates the current lookup (cheap, no network) — re-run with ›
 repo.addEventListener("input", () => {
-  repoOk = branchesOk = false; sizeOverride = false; go.textContent = "GO"; setGo();
-  branchSel.innerHTML = ""; branchSel.disabled = true; err.textContent = ""; $("warn").textContent = "";
+  clearLookup();
   status.textContent = repo.value.trim() ? "press › to look up" : "";
   syncUrl();
 });

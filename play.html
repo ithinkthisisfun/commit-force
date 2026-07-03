@@ -241,6 +241,7 @@ const rh=r=>'#'+r.map(v=>Math.max(0,Math.min(255,v|0)).toString(16).padStart(2,'
 const darken =(h,f)=>rh(hx(h).map(v=>v*f));
 const lighten=(h,f)=>rh(hx(h).map(v=>v+(255-v)*f));
 const palette=b=>({base:b,dark:darken(b,0.6),light:lighten(b,0.34)});
+const hpCol=p=>p>0.5?"#6fd08a":p>0.25?"#e6c36a":"#e04a4a";   // shared green/amber/red for every health/progress bar
 
 // ---- level --------------------------------------------------------------
 const FALLBACK={ repo:"demo/commit-force", counts:{total:5,closed:5,open:0,openActive:0,idle:0,commits:16}, span:{days:14},
@@ -301,7 +302,7 @@ const CLOSE_LEAD=400;                      // px before a closed truck's close d
 const MINGAP=22, CLUSTER_GAP=24, MAXTRUCKS=10;
 const TRUCK_LEAD=Math.round(W*1.0+60);   // world-px head start: dispatch this far ahead of a truck's due point so it slides in from off-screen (now a longer glide to the ~40% engage point)
 const BOSS_BULLET=240;   // boss: 4s bullet-time, then a running battle (open boss escapes, closed boss dies)
-const TRUCK_ROOF=GROUND_Y-22, TS=16;
+const TS=16;
 
 const OBS=LV.obstacles.map(o=>({ ...o }));
 const STARS_SRC=(LV.stars||[]).map(s=>({ ...s }));
@@ -961,7 +962,7 @@ function drawTruck(o){
     g.fillStyle="#e33"; g.beginPath(); g.arc(sx,gy-12,9*(0.5+o.boomT/14),0,6.29); g.fill(); g.globalAlpha=1; return; }
   if(o.boss){ g.globalAlpha=(o.fade??1); drawWarRig(sx, gy);
     if(o.phase==="battle"){ const p=Math.max(0,1-o.timer/o.dur), w=110;
-      const bc=p>0.5?"#6fd08a":p>0.25?"#e6c36a":"#e04a4a"; px(sx-w/2,gy-42,w,4,"#2a141a"); px(sx-w/2,gy-42,w*p,4,bc); }
+      const bc=hpCol(p); px(sx-w/2,gy-42,w,4,"#2a141a"); px(sx-w/2,gy-42,w*p,4,bc); }
     g.fillStyle="#ffd24d"; g.font="7px 'Courier New',monospace"; g.textAlign="center"; g.fillText("BOSS #"+o.n, sx, gy-45); g.textAlign="left";
     g.globalAlpha=1; return; }
   const col=heroById[o.hero]?.color||"#c92b2b", colD=darken(col,0.6), colL=lighten(col,0.3);
@@ -980,7 +981,7 @@ function drawTruck(o){
   wheel(sx-bw/2+6,bb,o.wheel); wheel(sx+bw/2-7,bb,o.wheel);
   // battle progress bar
   if(o.phase==="battle"){ const p=Math.max(0,Math.min(1,o.hp!=null?o.hp:1)), w=bw-4;   // time-to-close (resolves) or work-stint (open)
-    const col=p>0.5?"#6fd08a":p>0.25?"#e6c36a":"#e04a4a"; px(sx-w/2,ct-6,w,3,"#2a141a"); px(sx-w/2,ct-6,w*p,3,col); }
+    const col=hpCol(p); px(sx-w/2,ct-6,w,3,"#2a141a"); px(sx-w/2,ct-6,w*p,3,col); }
   // unresolved marker
   if(unresolved){ px(sx-7,ct-8,14,7,"rgba(20,12,6,0.85)"); g.fillStyle="#e6c36a"; g.font="6px 'Courier New',monospace"; g.textAlign="center";
     g.fillText(o.hadRider?"OPEN":"—",sx,ct-2.5); g.textAlign="left"; }
