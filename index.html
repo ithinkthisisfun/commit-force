@@ -78,6 +78,24 @@
   .help{ display:inline-block; width:13px; height:13px; line-height:12px; text-align:center; border:1px solid #7a3038; border-radius:50%; color:#d59aa2; font-size:9px; cursor:pointer; margin-left:5px; vertical-align:middle; user-select:none; }
   .help:hover{ border-color:var(--red2); color:#fff; }
   .tip{ position:fixed; z-index:20; max-width:250px; background:#241016; border:2px solid var(--red); color:#eaddd0; font-size:11px; line-height:1.5; padding:9px 11px; box-shadow:0 6px 20px #000; }
+  /* ---- SCOPE flow: a secondary "scope it out" + a big primary GO that's gated on a scan ---- */
+  #scope{ background:#3a1620; box-shadow:0 4px 0 #1a0c10; }
+  #scope:hover:not(:disabled){ background:var(--red); }
+  .biggo{ margin-top:10px; padding:17px; font-size:23px; letter-spacing:6px; }
+  .modal{ position:fixed; inset:0; z-index:30; display:flex; align-items:center; justify-content:center; background:rgba(6,4,6,0.74); padding:16px; }
+  .modal[hidden]{ display:none; }
+  .modal-card{ position:relative; width:min(460px,94vw); background:var(--panel); border:3px solid #2a1015; box-shadow:0 0 0 3px #000, 0 12px 50px #000; padding:24px 22px 20px; }
+  .modal-card h2{ margin:0 0 4px; font-size:22px; letter-spacing:3px; color:var(--red); text-shadow:2px 2px 0 #000; }
+  .modal-sub{ margin:0 0 4px; font-size:11px; color:#c7b3b8; letter-spacing:1px; line-height:1.5; }
+  .modal-x{ position:absolute; top:10px; right:10px; width:30px; height:30px; margin:0; padding:0; font-size:20px; line-height:1; letter-spacing:0; background:#2a1015; border:2px solid #5a2530; box-shadow:none; }
+  .modal-x:hover{ background:var(--red); }
+  .scoperow{ margin-top:14px; min-height:16px; display:flex; align-items:center; gap:8px; font-size:12px; color:#c7b3b8; letter-spacing:1px; }
+  #scopeSpin{ display:none; width:12px; height:12px; flex:none; border:2px solid #4a2530; border-top-color:var(--red2); border-radius:50%; animation:spin .7s linear infinite; }
+  .verdict{ margin-top:8px; font-size:13px; line-height:1.5; min-height:18px; letter-spacing:.5px; }
+  .breakdown{ margin-top:6px; font-size:11px; color:#9a8a8e; letter-spacing:1px; min-height:14px; }
+  .estline{ margin-top:9px; font-size:12px; letter-spacing:1px; min-height:15px; color:#c7b3b8; }
+  .estline b{ font-size:13px; }
+  .scope-err{ margin-top:8px; color:var(--red2); font-size:12px; min-height:14px; }
 </style>
 </head>
 <body>
@@ -100,20 +118,38 @@
   <label>COMMIT BRANCH <span class="help" data-help="Stars are the commits from ONE branch. Pick the branch where the work happened — otherwise a repo whose activity lived on a side branch shows no stars at all. Issues and PRs are repo-wide, so they're unaffected.">?</span></label>
   <select id="branch" disabled><option>—</option></select>
 
-  <label>DATE RANGE <span class="help" data-help="Read activity between these two dates. A tighter range shows EVERY issue/PR/commit in it; a wide range on a very busy repo hits the caps (500 commits / 150 issues / 150 PRs) and only shows the newest slice — the picker warns you first.">?</span></label>
-  <div class="row">
-    <div><input id="start" type="date" title="start date" aria-label="start date"></div>
-    <div><input id="end" type="date" title="end date" aria-label="end date"></div>
-  </div>
-
-  <button id="go">GO</button>
+  <button id="scope">SCOPE IT OUT</button>
+  <button id="go" class="biggo" disabled>GO</button>
   <div id="bar"><div id="fill"></div></div>
   <div id="statusrow"><span id="status"></span><span id="spin"></span></div>
   <div id="err"></div>
   <div id="warn"></div>
-  <div class="note">~60 GitHub requests/hr per IP — a few builds. Rate-limited? <a href="https://github.com/ithinkthisisfun/commit-force#run-locally-for-5000hr" target="_blank" rel="noreferrer">Run it locally</a> for 5000/hr. <a href="https://github.com/ithinkthisisfun/commit-force" target="_blank" rel="noreferrer">Source</a>.</div>
   <div class="note">Got a saved level? <a href="#" id="loadlink">Load a .json file</a> to replay it without touching GitHub.</div>
   <input id="loadfile" type="file" accept=".json,application/json" hidden>
+</div>
+
+<!-- SCOPE dialog: pick a date range, scan it, get an opinion on how full the show will be -->
+<div id="scopeModal" class="modal" hidden>
+  <div class="modal-card">
+    <button id="scopeClose" class="modal-x" type="button" title="close" aria-label="close">×</button>
+    <h2>SCOPE IT OUT</h2>
+    <p class="modal-sub">Pick a date window, then scan it to see how full the show will be — and how many of GitHub's 60/hr requests the build will spend.</p>
+
+    <label>DATE RANGE <span class="help" data-help="Read activity between these two dates. A tighter range shows EVERY issue/PR/commit in it; a wide range on a very busy repo pulls a lot and can run down GitHub's ~60 requests/hr limit — the scan tells you first.">?</span></label>
+    <div class="row">
+      <div><input id="start" type="date" title="start date" aria-label="start date"></div>
+      <div><input id="end" type="date" title="end date" aria-label="end date"></div>
+    </div>
+
+    <button id="scan">SCAN THIS RANGE</button>
+    <div class="scoperow"><span id="scopeStatus"></span><span id="scopeSpin"></span></div>
+    <div id="verdict" class="verdict"></div>
+    <div id="breakdown" class="breakdown"></div>
+    <div id="estline" class="estline"></div>
+    <div id="scopeErr" class="scope-err"></div>
+    <div class="note">~60 GitHub requests/hr per IP — a few builds. Rate-limited? <a href="https://github.com/ithinkthisisfun/commit-force#run-locally-for-5000hr" target="_blank" rel="noreferrer">Run it locally</a> for 5000/hr. <a href="https://github.com/ithinkthisisfun/commit-force" target="_blank" rel="noreferrer">Source</a>.</div>
+    <button id="useRange" disabled>USE THIS RANGE</button>
+  </div>
 </div>
 
 <script>
@@ -127,10 +163,13 @@
   (function () { var s = document.createElement("script"); s.src = "local-token.js"; s.onerror = function () {}; document.head.appendChild(s); })();
 </script>
 <script type="module">
-import { buildLevelFromGitHub, checkRepo, getBranches, getCounts, getSuggestedRepos, windowCounts, CAPS, RateLimitError } from "./gitboy-github.js";
+import { buildLevelFromGitHub, checkRepo, getBranches, getCounts, getSuggestedRepos, windowCounts, RateLimitError } from "./gitboy-github.js";
 import { normalizeRepo, assembleLevel } from "./gitboy-core.js";
 const $ = id => document.getElementById(id);
 const repo=$("repo"), go=$("go"), bar=$("bar"), fill=$("fill"), status=$("status"), err=$("err"), check=$("check"), startInput=$("start"), endInput=$("end");
+const scope=$("scope"), scopeModal=$("scopeModal"), scanBtn=$("scan"), useRange=$("useRange"),
+  scopeStatus=$("scopeStatus"), scopeSpin=$("scopeSpin"), verdictEl=$("verdict"), breakdownEl=$("breakdown"),
+  estlineEl=$("estline"), scopeErrEl=$("scopeErr");
 // GITHUB TOKEN comes ONLY from local-token.js (window.__GH_TOKEN) -- a gitignored, never-deployed file
 // you create from local-token.example.js when running your own copy. It doesn't exist in prod, so
 // __GH_TOKEN is undefined there and TOKEN() is always "" -- the hosted site can't read or send a token.
@@ -160,10 +199,11 @@ repo.value = sessionStorage.getItem("gitboy_lastrepo") || "";
 // shareable link: ?repo=owner/name&branch=main — prefill + auto-play
 let autoShare = null;
 const qr = (Q.get("repo") || "").trim();
-if (qr) { repo.value = qr; autoShare = { branch: (Q.get("branch") || "").trim() }; }
+if (qr) { repo.value = qr; autoShare = { branch: (Q.get("branch") || "").trim(), scan: Q.has("start") || Q.has("end") }; }
 // pull a branch out of a pasted /tree/<branch> URL (branch names may contain slashes)
 const branchHint = s => { const m = (s || "").match(/github\.com[/:][^/]+\/[^/]+\/tree\/([^?#]+)/i); return m ? decodeURIComponent(m[1].replace(/\/+$/, "")) : ""; };
-repo.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); (repoOk && branchesOk) ? start() : doCheck(); } });
+repo.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault();
+  if (repoOk && branchesOk) { scoped ? start() : openScope(); } else doCheck(); } });
 go.onclick = start;
 
 // help tooltips
@@ -182,12 +222,17 @@ document.addEventListener("click", () => { tip.style.display = "none"; });
 // "loading branches…", default-select the default branch -> enable GO. Issue/PR counts load
 // in the background afterward and never gate GO. Rate-limit hits are reported under GO.
 const branchSel = $("branch"), spin = $("spin");
-let repoOk = false, branchesOk = false, checkSeq = 0, sizeOverride = false;
-const setGo = () => { go.disabled = !(repoOk && branchesOk); };
-go.disabled = true;
+let repoOk = false, branchesOk = false, checkSeq = 0;
+let scoped = false, lastScope = null;   // GO stays greyed out until a range is scanned + accepted
+// SCOPE needs a verified repo+branch first; GO also needs the range scoped
+function setButtons(){ scope.disabled = !(repoOk && branchesOk); go.disabled = !(repoOk && branchesOk && scoped); }
+go.disabled = true; scope.disabled = true;
+// a repo/branch/range change un-scopes the build -> GO greys out until it's scanned again
+function invalidateScope(){ scoped = false; lastScope = null; useRange.disabled = true;
+  verdictEl.textContent = ""; breakdownEl.textContent = ""; estlineEl.textContent = ""; scopeErrEl.textContent = ""; setButtons(); }
 // reset lookup state (repo/branch no longer verified) -- shared by doCheck's start and a fresh keystroke
-function clearLookup(){ repoOk = branchesOk = false; sizeOverride = false; go.textContent = "GO"; setGo();
-  branchSel.innerHTML = ""; branchSel.disabled = true; err.textContent = ""; $("warn").textContent = ""; }
+function clearLookup(){ repoOk = branchesOk = false; go.textContent = "GO";
+  branchSel.innerHTML = ""; branchSel.disabled = true; err.textContent = ""; $("warn").textContent = ""; invalidateScope(); }
 const rateMsg = e => `⏳ GitHub rate limit hit (60/hr) — try again in ~${Math.max(1, Math.round((e.resetMs - Date.now()) / 60000))} min`;
 async function doCheck() {
   const auto = autoShare; autoShare = null;   // one-shot: a shared ?repo= link auto-plays on success
@@ -230,7 +275,8 @@ async function doCheck() {
     if (h) want = branches.includes(h) ? h : (branches.filter(b => h === b || h.startsWith(b + "/")).sort((a, b) => b.length - a.length)[0] || ""); }
   if (want && branches.includes(want)) branchSel.value = want;
   status.textContent = "repo ✓ · " + branches.length + " branch" + (branches.length !== 1 ? "es" : "");
-  setGo(); syncUrl();
+  setButtons(); syncUrl();
+  if (auto && auto.scan) autoScope();   // a shared link that carried a date range -> scope it silently so GO lights up (still one click)
 
   // step 3 (background) — issue/PR heads-up; does not gate GO
   getCounts(norm, TOKEN()).then(({ issues, prs }) => {
@@ -259,8 +305,9 @@ function syncUrl() {
   // iOS Safari's Share sheet reads og:url, not the address bar — keep it current too
   if (ogUrl) ogUrl.setAttribute("content", location.origin + path);
 }
-branchSel.addEventListener("change", () => { sizeOverride = false; if (!busy) go.textContent = "GO"; syncUrl(); });
-for (const el of [startInput, endInput]) el.addEventListener("change", () => { sizeOverride = false; if (!busy) go.textContent = "GO"; $("warn").textContent = ""; syncUrl(); });
+branchSel.addEventListener("change", () => { invalidateScope(); syncUrl(); });   // commit count depends on branch -> re-scope
+for (const el of [startInput, endInput]) el.addEventListener("change", () => { invalidateScope();
+  if (!scopeModal.hidden) scopeStatus.textContent = "range changed — hit SCAN"; $("warn").textContent = ""; syncUrl(); });
 
 // top-right in-app share icon: native share sheet (or clipboard) with these options
 const shareTip = $("shareTip");
@@ -285,29 +332,60 @@ repo.addEventListener("input", () => {
 });
 if (repo.value.trim()) doCheck();
 
+// ---- SCOPE dialog: scan the picked range, opine on fullness, estimate the request cost ----
+// The build hits four paged endpoints (100/page): /issues (returns issues + PRs), /pulls, /releases (1),
+// /commits. So calls ~= ceil((issues+prs)/100) + ceil(prs/100) + 1 + ceil(commits/100). The scan's own
+// Search-API counts live in a SEPARATE GitHub bucket, so they don't draw down the 60/hr build pool.
+const estCalls = c => { const pg = n => Math.max(1, Math.ceil((n || 0) / 100));
+  return pg((c.issues || 0) + (c.prs || 0)) + pg(c.prs) + 1 + pg(c.commits); };
+const num = n => n == null ? "?" : n.toLocaleString();
+function verdictFor(total, anyUnknown){
+  if (total < 100) return { msg: anyUnknown ? "Looks thin so far" : "This is pretty thin", detail: "try a wider date range for a fuller show", col: "#e6c36a" };
+  if (total > 700) return { msg: "This is pushing the max data GitHub allows in an hour", detail: "you might want to shrink the date range", col: "#e04a4a" };
+  return { msg: "This looks about right", detail: "a full, lively run", col: "#8fd8a0" };
+}
+function openScope(){ if (!(repoOk && branchesOk)) { doCheck(); return; }
+  scopeModal.hidden = false; scan(); }                       // opening the dialog kicks off the scan
+function closeScope(){ scopeModal.hidden = true; }
+scope.onclick = openScope;
+$("scopeClose").onclick = closeScope;
+scopeModal.addEventListener("click", e => { if (e.target === scopeModal) closeScope(); });   // backdrop click dismisses
+scanBtn.onclick = scan;
+useRange.onclick = () => { if (!scoped) return; closeScope();
+  status.textContent = (lastScope ? `${lastScope.total.toLocaleString()} items · est ${lastScope.est}/60 requests` : "range scoped") + " — hit GO";
+  setButtons(); go.focus(); };
+
+let scanSeq = 0;
+async function scan(){
+  const r = repo.value.trim(), w = winDates();
+  invalidateScope();
+  if (w.end <= w.start) { scopeErrEl.textContent = "✕ end date must be after the start date"; return; }
+  const my = ++scanSeq;
+  scopeStatus.textContent = "scanning…"; scopeSpin.style.display = "inline-block";
+  let c;
+  try { c = await windowCounts(r, w.start, w.end, branchSel.value, TOKEN()); }
+  catch (e) { if (my !== scanSeq) return; scopeSpin.style.display = "none"; scopeStatus.textContent = "";
+    scopeErrEl.textContent = (e instanceof RateLimitError) ? rateMsg(e) : "✕ " + (e.message || e); return; }
+  if (my !== scanSeq) return;
+  scopeSpin.style.display = "none"; scopeStatus.textContent = "";
+  const anyUnknown = c.issues == null || c.prs == null || c.commits == null;
+  const total = (c.issues || 0) + (c.prs || 0) + (c.commits || 0), est = estCalls(c);
+  const v = verdictFor(total, anyUnknown);
+  verdictEl.style.color = v.col; verdictEl.textContent = "⚑ " + v.msg + " — " + v.detail;
+  breakdownEl.textContent = `${num(c.issues)} issues · ${num(c.prs)} PRs · ${num(c.commits)} commits` + (anyUnknown ? "   (some counts unavailable)" : "");
+  const estCol = est > 60 ? "#e04a4a" : est > 40 ? "#e6c36a" : "#8fd8a0";
+  estlineEl.innerHTML = "Estimated GitHub requests: <b style=\"color:" + estCol + "\">" + est + " / 60</b>"
+    + (est > 60 ? "   — over one hour's budget; GitHub may throttle mid-build" : "");
+  scoped = true; lastScope = { total, est }; useRange.disabled = false; setButtons();
+}
+async function autoScope(){ try { await scan(); } catch {} }   // shared-link range: scan quietly, leave the modal closed
+
 let busy = false;
 async function start(){
-  if (busy || !(repoOk && branchesOk)) return;
+  if (busy || !(repoOk && branchesOk && scoped)) return;
   const r = repo.value.trim(), w = winDates(); err.textContent = "";
-  if (w.end <= w.start) { err.textContent = "✕ end date must be after the start date"; return; }
-  // size gate: how much does the picked range hold? Over the caps -> recommend a tighter range first.
-  if (!sizeOverride) {
-    busy = true; go.disabled = true; go.textContent = "CHECKING…"; $("warn").textContent = ""; status.textContent = "checking size…"; spin.style.display = "inline-block";
-    let c;
-    try { c = await windowCounts(r, w.start, w.end, branchSel.value, TOKEN()); }
-    catch (e) { spin.style.display = "none"; busy = false; go.disabled = false; go.textContent = "GO"; status.textContent = "";
-      err.textContent = (e instanceof RateLimitError) ? rateMsg(e) : "✕ " + (e.message || e); return; }
-    spin.style.display = "none"; busy = false; go.disabled = false;
-    const over = [];
-    if (c.commits != null && c.commits > CAPS.commits) over.push(c.commits.toLocaleString() + " commits");
-    if (c.issues  != null && c.issues  > CAPS.issues)  over.push(c.issues.toLocaleString()  + " issues");
-    if (c.prs     != null && c.prs     > CAPS.prs)     over.push(c.prs.toLocaleString()     + " PRs");
-    if (over.length) {
-      $("warn").textContent = "⚠ " + over.join(" · ") + " in this range — that's a big pull. Tighten the dates, or hit GO again to grab it ALL (slower, and it can hit GitHub's ~60/hr limit).";
-      status.textContent = ""; sizeOverride = true; go.textContent = "GO ANYWAY"; return;
-    }
-  }
-  busy = true; go.disabled = true; go.textContent = "LOADING…"; $("warn").textContent = ""; bar.style.display = "block"; fill.style.width = "3%"; status.textContent = "contacting github…";
+  busy = true; go.disabled = true; scope.disabled = true; go.textContent = "LOADING…"; $("warn").textContent = "";
+  bar.style.display = "block"; fill.style.width = "3%"; status.textContent = "contacting github…";
   try {
     const level = await buildLevelFromGitHub(r, {
       token: TOKEN(), branch: branchSel.value, start: w.start, end: w.end,
@@ -328,7 +406,7 @@ async function start(){
     reset();
   }
 }
-function reset(){ busy = false; go.disabled = !(repoOk && branchesOk); go.textContent = sizeOverride ? "GO ANYWAY" : "GO"; }
+function reset(){ busy = false; go.textContent = "GO"; setButtons(); }
 
 // load a saved level file straight into the player -- bypasses GitHub entirely
 const loadfile = $("loadfile"), loadlink = $("loadlink");
