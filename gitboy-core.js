@@ -118,17 +118,17 @@ export function assembleLevel(repo, { issues = [], prs = [], commits = [], relea
     .map(r => ({ tag: r.tag, name: r.name || r.tag, pre: !!r.pre, t: frac(r.ms) }))
     .sort((a, b) => a.t - b.t);
 
-  // Bosses (up to TWO): hotness = discussion (comments, log-scaled like upvotes) balanced against
-  // recency. Take the top-2 OPEN and top-2 CLOSED issues, then randomly pick two of that pool -- so a
-  // run might get two closed (both die), two open (both flee), or one of each. That uncertainty is the
-  // point: a closed-only boss always dies (no tension), a hottest-overall boss almost always flees.
+  // ONE boss: hotness = discussion (comments, log-scaled like upvotes) balanced against recency. Take
+  // the top-2 OPEN and top-2 CLOSED issues, then randomly pick ONE of that pool -- so each run the boss
+  // is a different hot issue and its state decides its fate (open flees, closed dies), ~50/50. That
+  // per-run uncertainty is the point: closed-only always dies (no tension), hottest-overall almost
+  // always flees.
   const BOSS_RECENCY_W = 2;
   const scored = obstacles.filter(o => o.comments >= 2)
     .map(o => ({ o, s: Math.log10(o.comments + 1) + BOSS_RECENCY_W * o.t }));   // o.t = clamped linear recency (0 = window start .. 1 = newest)
   const topN = (arr, n) => arr.sort((a, b) => b.s - a.s).slice(0, n).map(x => x.o);
   const pool = [...topN(scored.filter(x => x.o.state !== "closed"), 2), ...topN(scored.filter(x => x.o.state === "closed"), 2)];
-  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }   // shuffle
-  pool.slice(0, 2).forEach(o => { o.boss = true; });
+  if (pool.length) pool[Math.floor(Math.random() * pool.length)].boss = true;   // one random pick from the hot pool
 
   const closedN = obstacles.filter(o => o.state === "closed").length;
   const openN = obstacles.filter(o => o.state === "open").length;

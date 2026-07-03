@@ -344,20 +344,35 @@ const FLAG_X=lastX+Math.min(4200,Math.max(320,engagedN*16)), WORLD_END=FLAG_X+24
 
 // ---- heroes -------------------------------------------------------------
 const PUNCH_T=12, KICK_T=22, GRAV=0.6, JUMP=9.4, MAXFALL=12;
-const actors=LV.heroes.map((h,i)=>({ hero:h,id:h.id,name:h.name,pal:h.pal,real:h.real,
+// each dude gets a personality: run eagerness (spd), jump height (jmp), fidgetiness (antsy), whether
+// it takes the high road over platforms (prefersHigh), and its own random color.
+const DUDE_COLORS=["#e0524e","#e0913c","#e6cf4a","#78c850","#48b0a0","#4a90d9","#7a6ad0","#c862b6","#d95a8a","#58a8e0","#9ad24e","#e07a4a"];
+const persona=()=>({ spd:0.9+Math.random()*0.6, jmp:0.65+Math.random()*0.65, antsy:0.52+Math.random()*1.42, prefersHigh:Math.random()<0.5, boarder:Math.random()<0.35,
+  lag:10+Math.random()*180,                                             // jmp/antsy dialed down ~25%; boarder = loves riding trucks
+  homeF:0.26+Math.random()*0.46, wampF:0.24+Math.random()*0.26, wf:0.005+Math.random()*0.026, wph:Math.random()*6.28,   // roam relative to the SCREEN: home 26-72%, wander +-24-50% of width
+  pal:palette(DUDE_COLORS[(Math.random()*DUDE_COLORS.length)|0]) });
+const actors=LV.heroes.map((h,i)=>({ hero:h,id:h.id,name:h.name,pal:h.pal,real:h.real, core:i<3, dead:false,   // the first three are the immortal core
   x:START_X-40-i*16, y:GROUND_Y, vx:0, vy:0, face:1, onGround:true,
-  act:"idle", actT:0, animT:0, squash:0, lag:i*15, controlled:false, jumpCd:0, riding:null, floating:false, floatBias:(i*13)%37, prefersHigh:i%2===0 }));
-const lead=actors.find(a=>a.id===LV.lead)||actors[0];
+  act:"idle", actT:0, animT:0, squash:0, lag:i*15, controlled:false, jumpCd:0, riding:null, floating:false, floatBias:(i*13)%37, ...persona() }));
+const lead=actors.find(a=>a.id===LV.lead)||actors[0]; lead.core=true;   // whoever you control is always immortal
+const BASE_CREW=actors.length, CREW_CAP=6;   // crew grows via merged-PR paratroopers up to CREW_CAP; reset trims back to BASE_CREW
+function spawnDude(wx){                         // a merged PR parachutes in a new dev who joins the crew
+  const src=heroById[LV.lead]||actors[0].hero;
+  actors.push({ hero:src, id:src.id, name:src.name, pal:src.pal, real:false, core:false, dead:false,   // paratroopers are mortal
+    x:wx, y:GROUND_Y, vx:0, vy:-3.2, face:1, onGround:false,
+    act:"idle", actT:0, animT:0, squash:0, lag:30+Math.random()*90, controlled:false, jumpCd:0, riding:null, floating:false, floatBias:Math.random()*37, ...persona() });
+  burst(wx, GROUND_Y-8, "#ffd", 8, 2.4); shake=Math.max(shake,2); lastEvent="a dev shipped in on a PR"; SFX.yeah();
+}
 
 let anchorX=START_X, mode="auto", camX=0, shake=0, time=0;
 let finished=false, finishT=0, thrown=0, starPtr=0, starQueue=[];
 const STAR_RATE=5;   // commits flung per frame -> a steady shower whatever the local density (no deluge)
 let resolved=0, oBattled=0, oIdle=0, prMerged=0, prRejected=0;
-let fx=[], stars=[], cards=[], planesActive=[], missiles=[], balloons=[], bubbles=[], splats=[], lastEvent="";
+let fx=[], stars=[], cards=[], planesActive=[], missiles=[], balloons=[], bubbles=[], splats=[], ghosts=[], fallen=0, lastEvent="";
 let tickerText="", tickerCol="#e7d7c0", tickerHold=0, lastOoh=0, banner="", bannerT=0, zoom=1;
 let parade=[], paradeQueue=[], paradeTick=0, paradeOn=false;   // post-fireworks: open issues roar past
 let endStage="run", safe=null, safeShots=[], finishFlagX=0, flagRaise=0, regroupT=0;   // run -> regroup -> safe -> win -> parade
-const REGROUP=300, SAFE_DROP=380;   // ~5s regroup after the last boss finishes, then the vault drops from this height
+const REGROUP=300;   // ~5s regroup after the boss finishes, then the vault appears
 let joins=[], seenNames=new Set();   // "xxx joined..." feed for first-seen contributors
 let fireRockets=[], fireParts=[], fwTimer=0;
 const FWC=["#ff4d4d","#ffd24d","#4dff88","#4dd2ff","#b84dff","#ff4db8","#ffffff","#ff9a3d"];
@@ -401,6 +416,15 @@ function debris(x,y,n=10){ for(let i=0;i<n;i++) fx.push({x,y,vx:(Math.random()*2
 const GIBC=["#b81f1f","#8f1616","#d13a3a","#701818"];
 function gib(x,y,n=10){ for(let i=0;i<n;i++) fx.push({x,y,vx:(Math.random()*2-1)*3,vy:-Math.random()*3.6-0.5,life:40+Math.random()*34,color:pick(GIBC),gib:true}); }
 function addSplat(x){ splats.push({x,s:2+Math.random()*3,c:pick(["#5a1414","#701818","#4a1010"])}); if(splats.length>64) splats.shift(); }
+function killDude(a){ if(a.dead) return; a.dead=true; fallen++;   // permadeath: gib, splat, ghost drifts up, gone for good
+  if(a.riding){ const o=a.riding; if(o.riders){ o.riders=o.riders.filter(r=>r!==a); if(!o.riders.length) o.riders=null; } a.riding=null; }   // pull it off any truck it was on
+  gib(a.x,a.y-8,16); addSplat(a.x); addSplat(a.x+(Math.random()*2-1)*12); ghosts.push({x:a.x,y:a.y-14,vy:-0.55,life:80}); }
+// a blast at wx: CORE dudes get flattened but survive; MORTAL dudes die. returns true if it caught anyone.
+function smash(wx,radius){ let hit=false; for(const a of actors){ if(a.dead) continue;
+  if(Math.abs(a.x-wx)<radius){ hit=true;
+    if(a.core){ if(a.riding){a.riding=null;a.rideSlot=0;} a.vy=-6-Math.random()*2.5; a.vx=(a.x<wx?-1:1)*(2.6+Math.random()*2); a.onGround=false; a.act="idle"; a.actT=0; a.squash=1; }
+    else killDude(a); } }
+  return hit; }
 function popCard(o,verb){ cards.push({x:o.x,y:GROUND_Y-40,life:150,o,verb}); }
 function setTicker(o,verb,col){ tickerText=verb+"   #"+o.n+"  "+o.title; tickerCol=col; tickerHold=54; }  // hold so conquests stay readable
 function joinEvent(name){ if(!name || name==="?" || seenNames.has(name)) return; seenNames.add(name);
@@ -423,13 +447,12 @@ function updateParade(){
 }
 // final vault: the crew line up and blast it until it bursts, then LEVEL COMPLETE
 function updateSafe(){
-  if(!safe.landed){                                         // vault plummeting from the sky
-    safe.fvy+=0.9; safe.fall=Math.max(0,safe.fall-safe.fvy);
-    if(safe.fall<=0){ safe.landed=true; shake=20; SFX.explosion();
-      for(const a of actors){ if(a.riding) continue;        // SPLAT anyone caught under it
-        if(Math.abs(a.x-safe.x)<30){ a.vy=-6-Math.random()*2.5; a.vx=(a.x<safe.x?-1:1)*(2.4+Math.random()*2.2); a.onGround=false; a.act="idle"; a.actT=0; gib(a.x,a.y-8,10); addSplat(a.x); } }
-      burst(safe.x,GROUND_Y-6,"#cbb58a",26,3.4); debris(safe.x,GROUND_Y-8,16);
-      banner="CRACK THE VAULT"; bannerT=170; }
+  if(safe.rise>0){                                          // heaving up out of the ground -- the whole screen rumbles
+    safe.rise=Math.max(0, safe.rise-0.6); safe.t++;
+    shake=Math.max(shake, 3+Math.random()*2);
+    if(safe.t%3===0){ const bx=safe.x+(Math.random()*2-1)*28; debris(bx,GROUND_Y-2,3); burst(bx,GROUND_Y-3,"#6b4a2a",3,2); }   // kicked-up dirt
+    if(safe.t%18===0) SFX.planeBoom();                      // low rumble
+    if(safe.rise<=0){ safe.t=0; shake=Math.max(shake,10); SFX.explosion(); banner="CRACK THE VAULT"; bannerT=170; }   // fully out -> NOW crack it
     return;
   }
   safe.t++;
@@ -494,17 +517,15 @@ function updatePlanes(frontX){
   for(const m of missiles){
     if(m.chute){                                                       // merged PR: white parachute drifting down ~half bomb speed
       m.vy=Math.min(1.3,m.vy+0.02); m.sway+=0.055; m.x+=m.drift+Math.sin(m.sway)*m.swayAmp; m.y+=m.vy; m.life--;
-      if(m.y>=groundS){ m.dead=true;                                   // touches down -> the commit it delivered
-        stars.push({x:m.x+camX,y:groundS+camY-4,vx:(Math.random()*2-1)*1.0+0.3,vy:-4.2-Math.random()*1.6,life:54+Math.random()*16,spin:Math.random()*6,color:"#f5d76e",sha:"",bot:false}); SFX.sparkle(); }
+      if(m.y>=groundS){ m.dead=true;                                   // touches down -> ~1 in 10 merged PRs parachutes in a dev (if there's room); the rest deliver a commit-star
+        if(actors.filter(a=>!a.dead).length<CREW_CAP && Math.random()<0.1) spawnDude(m.x+camX);
+        else { stars.push({x:m.x+camX,y:groundS+camY-4,vx:(Math.random()*2-1)*1.0+0.3,vy:-4.2-Math.random()*1.6,life:54+Math.random()*16,spin:Math.random()*6,color:"#f5d76e",sha:"",bot:false}); SFX.sparkle(); } }
       continue; }
     m.x+=m.vx; m.y+=m.vy; m.vy+=0.05; m.life--;                        // rejected PR: red bomb
     if(m.y>=groundS){ m.dead=true; shake=Math.max(shake,3);
       for(let i=0;i<13;i++) fx.push({x:m.x+camX,y:(groundS)+camY,vx:(Math.random()*2-1)*2.5,vy:-Math.random()*2.6,life:18+Math.random()*12,color:Math.random()<0.5?m.color:"#ffd"});
-      const ix=m.x+camX; let hit=false;                                // splat any dudes in the splash zone
-      for(const a of actors){ if(a.riding) continue;
-        if(Math.abs(a.x-ix)<40){ a.vy=-5.5-Math.random()*2; a.vx=(a.x<ix?-1:1)*(2.6+Math.random()*1.8); a.onGround=false; a.act="idle"; a.actT=0;
-          gib(a.x,a.y-8,8); addSplat(a.x); burst(a.x,a.y-8,"#b81f1f",7,2.4); hit=true; } }
-      if(hit){ shake=Math.max(shake,7); SFX.grunt(); } } }
+      const ix=m.x+camX;                                               // rejected-PR bomb: mortals in the splash zone die (core get thrown)
+      if(smash(ix,40)){ shake=Math.max(shake,7); SFX.grunt(); } } }
   planesActive=planesActive.filter(pl=>!pl.dead);
   missiles=missiles.filter(m=>!m.dead && m.life>0);
 }
@@ -579,11 +600,12 @@ function drawBubble(bb){ const x=Math.round(bb.x), y=Math.round(bb.y);
 
 function startAttack(a,move){ if(a.act!=="idle")return;
   if(move==="kick"){ a.act="kick"; a.actT=KICK_T; a.vx=a.face*4.2; a.vy=Math.min(a.vy,-1.8); } else { a.act="punch"; a.actT=PUNCH_T; } }
-function doJump(a){ if(a.onGround){ a.vy=-JUMP; a.onGround=false; burst(a.x,a.y-1,a.pal.light,5,1.6); burst(a.x,a.y-2,"#b81f1f",3,1.2); } }
+function doJump(a){ if(a.onGround){ a.vy=-JUMP*(a.jmp||1); a.onGround=false; burst(a.x,a.y-1,a.pal.light,5,1.6); burst(a.x,a.y-2,"#b81f1f",3,1.2); } }
 function pickRider(o){ if(finished) return null;   // vault stage: no more boarding, so nobody gets carried past the safe
-  const own=actors.find(a=>a.id===o.hero&&!a.riding&&!a.controlled&&!a.floating); if(own)return own;
-  const free=actors.filter(a=>!a.riding&&!a.controlled&&!a.floating); if(!free.length)return null;
-  return free.reduce((p,q)=>Math.abs(q.x-o.x)<Math.abs(p.x-o.x)?q:p,free[0]); }
+  const free=actors.filter(a=>!a.riding&&!a.controlled&&!a.floating&&!a.dead); if(!free.length)return null;
+  // pick by PROXIMITY (so nobody zips across the whole screen), with a pull toward truck-lovers + squad-mates
+  const cost=a=>Math.abs(a.x-o.x) - (a.boarder?100:0) - (a.id===o.hero?30:0);
+  return free.reduce((p,q)=>cost(q)<cost(p)?q:p, free[0]); }
 
 // ---- update -------------------------------------------------------------
 function update(){
@@ -593,13 +615,19 @@ function update(){
   if(hit("enter")){ if(mode==="auto"){ mode="play"; lead.controlled=true; lastEvent="you grabbed "+lead.name; }
     else { mode="auto"; lead.controlled=false; lastEvent="back to auto-run"; } }
 
-  const runners=actors.filter(a=>!a.riding);
-  const frontX=(runners.length?Math.max(...runners.map(a=>a.x)):Math.max(...actors.map(a=>a.x)));
+  const runners=actors.filter(a=>!a.riding&&!a.dead);
+  const frontX=anchorX;   // progress = the anchor (stable, monotonic) so the wandering dudes don't jitter the clock / truck dispatch / vault trigger
   const bossFight=BOSSES.some(o=>o.phase==="battle"&&o.timer<BOSS_BULLET);   // bullet time: first 4s of ANY boss brawl
   SFX.boss(BOSSES.some(o=>o.phase==="battle"));             // dread music while any boss is battling
   if(!finished) anchorX+=RUNSPEED*(bossFight?0.32:1);       // bullet-time slow-mo; crew keeps moving through the regroup so a battling boss stays alongside them (framed)
 
   for(const a of actors) updateActor(a,frontX);
+
+  // dudes bump off each other -- gentle horizontal repulsion when two grounded runners overlap
+  for(let i=0;i<actors.length;i++){ const a=actors[i]; if(a.riding||a.floating||a.dead) continue;
+    for(let j=i+1;j<actors.length;j++){ const b=actors[j]; if(b.riding||b.floating||b.dead) continue;
+      const dx=b.x-a.x; if(Math.abs(dx)<9 && Math.abs(b.y-a.y)<12){ const s=dx>=0?1:-1, push=(9-Math.abs(dx))*0.25;
+        a.x-=push*s; b.x+=push*s; a.vx-=0.28*s; b.vx+=0.28*s; } } }
 
   // ---- commit stars flung off the front runner ----
   const fh=runners.length?runners.reduce((p,q)=>q.x>p.x?q:p,runners[0]):actors[0];
@@ -627,6 +655,11 @@ function update(){
     if(!o.spawned||o.done) continue;
     o.fade=Math.min(1,(o.fade||0)+0.08);
     o.x+=o.vx; o.wheel+=Math.abs(o.vx)*0.18;
+    if(o.phase!=="pending" && o.phase!=="boom"){                        // a rolling truck flattens grounded dudes in its path (some get smashed -- fine)
+      for(const a of actors){ if(a.dead||a.riding||!a.onGround) continue;
+        if(Math.abs(a.x-o.x)<o.bw*0.5+2 && Math.random()<0.05){
+          if(a.core){ a.vy=-7; a.vx=(a.x<o.x?-1:1)*3.5; a.onGround=false; a.act="idle"; a.squash=1; } else killDude(a);
+          shake=Math.max(shake,4); } } }
     if(o.phase==="approach"){
       if(o.x-camX<=W*0.40){                          // truck reaches ~40% (just ahead of the crew) -> jump on
         let crew;
@@ -646,9 +679,9 @@ function update(){
         if(o.timer%8===0) burst(o.x+8,o.roof+6,"#ffd",3,1.6);
         if(o.timer>16 && o.timer%16===0){                  // boss takes a beating: small blasts before it goes
           burst(o.x+(Math.random()*2-1)*22, o.roof+Math.random()*12, pick(["#ffd76e","#e33"]), 8, 2.6); gib(o.x+(Math.random()*2-1)*18,o.roof+6,4); shake=Math.max(shake,4); SFX.planeBoom(); }
-        // a boss that's going to ESCAPE bails at 25% of the brawl (snappy); a boss that's DEFEATED
-        // fights the full duration then blows up.
-        if(o.timer >= (o.resolves ? o.dur : o.dur*0.25)){ const crew=o.riders||[];   // crew may be null (vault-stage dismount)
+        // a boss that's going to ESCAPE fights down to ~25% health, THEN bolts (flee at 75% of the
+        // brawl); a boss that's DEFEATED fights the full duration and blows up.
+        if(o.timer >= (o.resolves ? o.dur : o.dur*0.75)){ const crew=o.riders||[];   // crew may be null (vault-stage dismount)
           if(!o.resolves){ o.phase="flee"; o.vx=RUNSPEED*1.9;
             for(let i=0;i<7;i++) burst(o.x+(Math.random()*2-1)*o.bw*0.5, o.roof+Math.random()*16, pick(["#ffd76e","#e33","#fff"]), 13, 3.6);   // a bunch of explosions...
             gib(o.x,o.roof+8,16); shake=16; SFX.explosion();
@@ -656,8 +689,8 @@ function update(){
             banner="BOSS ESCAPED!"; bannerT=200; SFX.bossHorn(); popCard(o,"ESCAPED!"); setTicker(o,"ESCAPED","#e6c36a"); lastEvent="BOSS #"+o.n+" got away!"; }
           else { o.phase="boom"; o.boomT=0; SFX.explosion(); shake=18;
             burst(o.x,GROUND_Y-14,"#ffd76e",52,4); burst(o.x,GROUND_Y-12,"#e33",40,3.6); debris(o.x,GROUND_Y-14,24);
-            gib(o.x,o.roof+8,26); addSplat(o.x); crew.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6.5; r.act="idle"; });
-            SFX.yeah(); banner="BOSS DEFEATED"; bannerT=200; popCard(o,"RESOLVED"); setTicker(o,"RESOLVED","#8fd8a0"); lastEvent=(crew[0]?crew[0].name:"the crew")+" resolved #"+o.n;
+            gib(o.x,o.roof+8,26); addSplat(o.x); smash(o.x, o.bw*0.6+22);   // the blast flattens the crew around the rig -- mortals die, core survive
+            SFX.yeah(); banner="BOSS DEFEATED"; bannerT=200; popCard(o,"RESOLVED"); setTicker(o,"RESOLVED","#8fd8a0"); lastEvent="#"+o.n+" resolved";
             if(o.hero==="bug") spawnBubble(o); else for(let i=0;i<5;i++) spawnBalloon(o); }   // boss: bug -> beetle bubble, everything else -> a burst of typed balloons
           o.riders=null; }
       } else {                                             // regular truck: a dude works it ~3s then hops off; a CLOSED one booms on its real close date
@@ -668,11 +701,10 @@ function update(){
         if(o.riders){
           if(o.timer%14===0) o.riders.forEach(r=>{ r.act="punch"; r.actT=PUNCH_T; });
           if(o.timer%8===0) burst(o.x+8,o.roof+6,"#ffd",3,1.6);
-          if(o.timer>=RIDE_STINT && !nearClose){            // stint up (and not about to close) -> hop off to work the next truck
+          if(!o.resolves && o.timer>=RIDE_STINT*(o.riders[0]&&o.riders[0].boarder?2.2:1)){   // OPEN truck: stint up -> hop off (a closed truck keeps its dude the whole resolution)
             const crew=o.riders; crew.forEach(r=>{ r.riding=null; r.rideSlot=0; r.vy=-6; r.act="idle"; }); o.riders=null;
-            if(!o.resolves){ o.phase="out"; o.vx=RUNSPEED*0.5; popCard(o,"STILL OPEN"); lastEvent=crew[0].name+" dropped #"+o.n; }
-            else lastEvent=crew[0].name+" working #"+o.n; }               // closed: rolls on toward its close date
-        } else if(nearClose){                               // coasting truck near/past close -> grab a free dude so it isn't a self-destruct
+            o.phase="out"; o.vx=RUNSPEED*0.5; popCard(o,"STILL OPEN"); lastEvent=crew[0].name+" dropped #"+o.n; }
+        } else if(o.resolves || nearClose){                 // a resolving truck with no live rider always gets one -> its HP never drains unattended
           const r=pickRider(o); if(r){ r.riding=o; r.rideSlot=0; o.riders=[r]; o.hadRider=true; }
         }
         if(overdue){                                        // blow it once a dude's actually aboard, or once it's slid past center with nobody
@@ -728,12 +760,11 @@ function update(){
     if(endStage==="regroup"){
       if(BOSSES.some(b=>b.spawned && !b.done)) regroupT=0;   // hold the countdown while a boss is still brawling
       else regroupT++;
-      if(regroupT>REGROUP){                                  // vault drops just ahead of the RUNNING crew (frontX), from the sky
-        finished=true; endStage="safe"; shake=8; SFX.bossHorn();
-        safe={ x:frontX+18, t:0, dur:170, exploding:false, boomT:0, fall:SAFE_DROP, fvy:0, landed:false }; safeShots=[];
+      if(regroupT>REGROUP){                                  // the crew stops; the vault ERUPTS from the ground in front of them (updateSafe drives the rise)
+        finished=true; endStage="safe"; shake=8; SFX.stopMusic();
+        safe={ x:Math.round(frontX+96), t:0, dur:340, exploding:false, boomT:0, rise:54 }; safeShots=[];   // 2x HP; fixed in world, rises out of the dirt
         actors.forEach(a=>{ if(a.riding){ a.riding=null; a.rideSlot=0; a.vy=-3.5; a.act="idle"; } });   // any lingering riders dismount
         OBS.forEach(o=>{ o.riders=null; if(o.boss && o.spawned && !o.done && o.phase!=="boom"){ o.phase="flee"; o.vx=RUNSPEED*1.8; } });
-        banner="INCOMING!"; bannerT=110;
       }
     }
   }
@@ -747,6 +778,7 @@ function update(){
   for(const p of fx){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.2; p.life--; if(p.gib&&p.y>=GROUND_Y){ addSplat(p.x); p.life=0; } } fx=fx.filter(p=>p.life>0);
   for(const s of stars){ s.x+=s.vx; s.y+=s.vy; s.vy+=s.bot?0.03:0.16; if(s.bot) s.x+=Math.sin((time+s.spin*10)*0.15)*0.3; s.spin+=0.3; s.life--; } stars=stars.filter(s=>s.life>0);
   for(const c of cards){ c.y-=0.25; c.life--; } cards=cards.filter(c=>c.life>0);
+  for(const g of ghosts){ g.y+=g.vy; g.vy-=0.004; g.life--; } ghosts=ghosts.filter(g=>g.life>0);   // fallen devs drift up as ghosts
   for(const j of joins){ j.y-=0.5; j.life--; } joins=joins.filter(j=>j.life>0 && j.y>12);   // join feed scrolls up
 
   let idling=0; for(const o of OBS) if(o.spawned&&!o.done&&o.phase!=="boom") idling++;
@@ -763,12 +795,20 @@ function update(){
 }
 
 function updateActor(a,frontX){
+  if(a.dead) return;                                        // permadead -> inert
   a.floating = !a.riding && warpZone(a.x);
   // ---- riding a truck: pinned on the roof, throwing punches ----
   if(a.riding){
     const o=a.riding, n=o.riders?o.riders.length:1, tx=o.x + ((a.rideSlot||0)-(n-1)/2)*(o.boss?72:12);  // fan riders across the roof (one per tank for the war rig)
-    const _dx=tx-a.x; a.x += Math.max(-10, Math.min(10, _dx*0.45));   // slide onto the roof, capped so a far board reads as a leap, not a teleport
-    a.y+=(o.roof-a.y)*0.45; a.vy=0; a.onGround=true; a.face=1;
+    const _dx=tx-a.x, gy=GROUND_Y-terrainH(a.x);
+    if(Math.abs(_dx)>16){                          // not aboard yet -> RUN over to it on the ground (an eventual goal, not a zoom)
+      a.vx += (Math.sign(_dx)*RUNSPEED*1.4 - a.vx)*0.12; a.x += a.vx; a.face=_dx>0?1:-1;
+      a.vy=Math.min(MAXFALL,a.vy+GRAV); a.y=Math.min(gy,a.y+a.vy); if(a.y>=gy){a.y=gy;a.vy=0;a.onGround=true;} else a.onGround=false;
+      a.animT+=Math.abs(a.vx)*0.12;
+      if(a.act!=="idle"){ a.actT--; if(a.actT<=0)a.act="idle"; } return;
+    }
+    a.x += Math.max(-4, Math.min(4, _dx*0.4));      // arrived -> climb onto the roof
+    a.y+=(o.roof-a.y)*0.4; a.vy=0; a.onGround=true; a.face=1;
     if(a.act!=="idle"){ a.actT--; if(a.actT<=0)a.act="idle"; }
     a.animT=0; return;
   }
@@ -792,17 +832,19 @@ function updateActor(a,frontX){
     if(hit("j","z")) startAttack(a,"punch");
     if(hit("k","x")) startAttack(a,"kick");
   } else {
-    let desired=anchorX-a.lag;
+    let desired = finished ? (anchorX - a.lag)                                     // gather near the vault for the finale
+      : camX + W*(a.homeF + Math.sin(time*a.wf + a.wph)*a.wampF);                   // else roam relative to the SCREEN -> full width, right half included
+    desired = Math.max(camX+16, Math.min(camX+W-24, desired));
     const dx=desired-a.x;
-    a.vx+=(Math.max(-0.6,Math.min(1.0,dx*0.05))*RUNSPEED*1.7 - a.vx)*0.2;
-    if(dx>0.2) a.face=1;
-    // ~half the crew take the high road: hop up onto platforms when one comes up
+    a.vx+=(Math.max(-1.2,Math.min(1.4,dx*0.045))*RUNSPEED*1.08*a.spd - a.vx)*0.16;   // chase speed dialed down another ~10%
+    if(Math.abs(dx)>1) a.face=dx>0?1:-1;
+    // high-road crew hop up onto platforms when one comes up
     if(a.prefersHigh && a.onGround && a.jumpCd<=0){
       for(const p of platforms){ if(a.x>p.x0-26 && a.x<p.x0+8 && a.y>p.y+2){ doJump(a); a.jumpCd=22; break; } }
-    } else if(inZone(a.x)&&a.onGround&&a.jumpCd<=0&&Math.random()<0.045){ doJump(a); a.jumpCd=18; }
-    if(a.onGround && a.jumpCd<=0){ const rise=terrainH(a.x+9)-terrainH(a.x); if(rise>=3){ a.vy=-Math.min(9,4.6+rise*0.35); a.onGround=false; a.jumpCd=9; } }   // hop up the terrain stairs
-    if(a.onGround && a.jumpCd<=0 && Math.abs(a.vx)<0.7 && Math.abs(dx)<8){   // never idle -- an antsy dude bounces in place
-      a.vy=-3.2-Math.random()*1.6; a.vx+=(Math.random()*2-1)*1.6; a.onGround=false; a.jumpCd=8+((Math.random()*12)|0); }
+    } else if(inZone(a.x)&&a.onGround&&a.jumpCd<=0&&Math.random()<0.045*a.antsy){ doJump(a); a.jumpCd=18; }   // antsier dudes leap around dense zones more
+    if(a.onGround && a.jumpCd<=0){ const rise=terrainH(a.x+9)-terrainH(a.x); if(rise>=3){ a.vy=-Math.min(9,(4.6+rise*0.35)*a.jmp); a.onGround=false; a.jumpCd=9; } }   // hop up the terrain stairs (springier = higher)
+    if(a.onGround && a.jumpCd<=0 && Math.abs(a.vx)<0.9 && Math.abs(dx)<12){   // fidget in place -- bigger, wilder hops
+      a.vy=(-4-Math.random()*3.5)*a.jmp; a.vx+=(Math.random()*2-1)*3.5; a.onGround=false; a.jumpCd=Math.round((8+Math.random()*12)/a.antsy); }
   }
   if(a.act!=="idle"){ a.actT--; if(a.act==="kick") a.vy=Math.min(MAXFALL,a.vy+GRAV*0.4);
     if(a.actT<=0||(a.act==="kick"&&a.onGround)) a.act="idle"; }
@@ -819,7 +861,8 @@ function collidePlatforms(a){ const feet=a.y,half=5;
   for(const p of platforms){ if(a.x+half>p.x0&&a.x-half<p.x1&&a.vy>=0&&feet>=p.y&&feet-a.vy<=p.y+4){ a.y=p.y; a.vy=0; a.onGround=true; } } }
 
 function reset(){ for(const k in pressed) delete pressed[k];   // else 'r' stays down and we reset every frame
-  OBS.forEach(initTruck); actors.forEach((a,i)=>{ a.x=START_X-40-i*16; a.y=GROUND_Y; a.vx=a.vy=0; a.act="idle"; a.controlled=false; a.riding=null; a.rideSlot=0; });
+  OBS.forEach(initTruck); actors.length=BASE_CREW; fallen=0; ghosts=[];   // drop parachuted-in devs; revive the base crew
+  actors.forEach((a,i)=>{ a.x=START_X-40-i*16; a.y=GROUND_Y; a.vx=a.vy=0; a.act="idle"; a.controlled=false; a.riding=null; a.rideSlot=0; a.dead=false; });
   PLANES.forEach(p=>p.launched=false); RELEASES.forEach(r=>{ r.hit=false; r.raise=0; });
   endStage="run"; safe=null; safeShots=[]; finishFlagX=0; flagRaise=0; regroupT=0; clockX=0; joins=[]; seenNames.clear();
   anchorX=START_X; mode="auto"; finished=false; finishT=0; camX=0; thrown=0; starPtr=0; starQueue=[]; resolved=oBattled=oIdle=0; prMerged=prRejected=0;
@@ -843,11 +886,11 @@ function drawBG(){
   for(let i=0;i<18;i++){ const x=i*80-(camX*0.5)%80; px(x,60,24,GROUND_Y-camY-60,"#2c1119"); px(x+2,60,3,GROUND_Y-camY-60,"#3a1622"); }
   g.fillStyle="#5a2028"; for(let i=0;i<50;i++){ let x=(i*89-camX*0.15)%W; if(x<0)x+=W; px(x,(i*47)%80,1,1,"#5a2028"); }
 }
-// terrain: smooth-stepped stairs (up to ~4 steps high) so the crew hops around a lot.
+// terrain: stepped stairs (up to ~6 steps, ~54px) so the crew hops around a LOT.
 // Trucks ignore this -- they roll on flat GROUND_Y and are drawn in front of the terrain.
-const TSTEP=7;
-function terrainH(x){ const n=Math.sin(x*0.021)+Math.sin(x*0.043+1.3)+Math.sin(x*0.009+2.4);   // -3..3 smooth
-  return Math.max(0,Math.min(4,Math.round((n+3)/6*4)))*TSTEP; }                                  // 0..4 steps
+const TSTEP=9;
+function terrainH(x){ const n=Math.sin(x*0.021)+Math.sin(x*0.043+1.3)+Math.sin(x*0.009+2.4)+Math.sin(x*0.08+0.7)*0.9;   // rolling hills + a faster bumpy octave -> -3.9..3.9
+  return Math.max(0,Math.min(6,Math.round((n+3.9)/7.8*6)))*TSTEP; }                                                     // 0..6 steps (taller + steeper than before)
 function drawGround(){ const gy=GROUND_Y-camY, c0=Math.floor(camX/TS)-1;
   for(let r=0; gy+r*TS<H+TS; r++) for(let c=c0; c*TS-camX<W; c++) brick(c*TS-camX, gy+r*TS, TS);
   for(let x=0;x<W;x++){ const h=terrainH(camX+x); if(h>0){ px(x,gy-h,1,h,"#48242c"); px(x,gy-h,1,1,"#6b3540"); } } }   // stepped surface
@@ -1005,15 +1048,17 @@ function drawFlag(){ const x=finishFlagX-camX, gy=GROUND_Y-camY; if(x<-60||x>W+6
   px(fx-1,fyTop-1,cols*cs+2,rows*cs+2,"#181818");            // thin frame
   for(let cy=0;cy<rows;cy++) for(let cx=0;cx<cols;cx++) px(fx+cx*cs, fyTop+cy*cs, cs, cs, ((cx+cy)%2)?"#f4f4f4":"#181818"); }
 function drawSafe(){ if(!safe || (safe.exploding && safe.boomT>6)) return;
-  const x=safe.x-camX, gy=GROUND_Y-camY, w=44, h=48, fall=safe.fall||0, top=gy-h-fall; if(x<-60||x>W+60) return;
-  if(fall>0){ const s=Math.max(5,22-fall*0.045); g.globalAlpha=0.35; g.fillStyle="#000"; g.beginPath(); g.ellipse(x,gy-2,s,4,0,0,6.2832); g.fill(); g.globalAlpha=1; }   // shadow telegraph on the ground
-  const j=safe.exploding?(Math.random()*2-1)*3:0;                    // rattle as it's blasted
+  const x=safe.x-camX, gy=GROUND_Y-camY, w=44, h=48, rise=safe.rise||0, top=gy-h+rise; if(x<-60||x>W+60) return;
+  const erupting=rise>0;
+  if(erupting){ g.save(); g.beginPath(); g.rect(x-w/2-12, top-16, w+24, gy-(top-16)); g.clip(); }   // hide the still-buried part below the ground line
+  const j=(safe.exploding||erupting)?(Math.random()*2-1)*3:0;         // rattle as it's blasted / rumbles as it heaves up
   px(x-w/2+j,top,w,h,"#4a5058"); px(x-w/2+j,top,w,3,"#6b727a"); px(x-w/2+j,top,3,h,"#5a626a"); px(x+w/2-3+j,top,3,h,"#333a40"); px(x-w/2+j,top+h-3,w,3,"#2a2f34");
   px(x-w/2+5+j,top+5,w-10,h-10,"#3a4046"); px(x-w/2+5+j,top+5,w-10,2,"#525a62");   // door
   g.fillStyle="#8a929a"; g.beginPath(); g.arc(x+j,top+h*0.55,7,0,6.29); g.fill(); g.fillStyle="#2a2f34"; g.beginPath(); g.arc(x+j,top+h*0.55,4,0,6.29); g.fill();
   g.strokeStyle="#cdd4d8"; g.lineWidth=1; g.beginPath(); g.moveTo(x+j,top+h*0.55); g.lineTo(x+j+Math.cos(safe.t*0.2)*5,top+h*0.55+Math.sin(safe.t*0.2)*5); g.stroke();   // spinning dial
   px(x+w/2-9+j,top+h*0.55-1,6,2,"#8a929a");                          // handle
   g.fillStyle="#d9b84a"; g.font="11px 'Courier New',monospace"; g.textAlign="center"; g.fillText("$",x+j,top+16); g.textAlign="left";
+  if(erupting){ g.restore(); return; }                              // no integrity bar until it's fully out
   const p=Math.max(0,1-safe.t/safe.dur); px(x-w/2,top-8,w,4,"#2a141a"); px(x-w/2,top-8,w*p,4,"#8fd8a0"); }   // vault integrity bar
 
 function drawCards(){ for(const c of cards){ const x=c.x-camX,y=c.y-camY,al=Math.min(1,c.life/40); if(x<-140||x>W+140)continue;
@@ -1031,6 +1076,7 @@ function drawHUD(){
   g.fillStyle="#e6c36a"; g.fillText("OPEN "+(oBattled+oIdle)+"/"+LV.counts.open,W*0.62,11);
   g.fillStyle="#f5d76e"; g.fillText("★"+thrown+"/"+LV.counts.commits,W*0.79,11);
   g.textAlign="right"; g.fillStyle=mode==="play"?"#ff8a8a":"#7a9ad8"; g.fillText((SFX.isMuted()?"muted ":"")+(mode==="play"?"[YOU]":"[AUTO]"),W-6,11); g.textAlign="left";
+  { const living=actors.filter(a=>!a.dead).length; g.fillStyle="#c9b6bb"; g.fillText("CREW "+living+(fallen?"   ☠ "+fallen+" lost":""),6,24); }
   if(TL && curDateMs!=null){ g.textAlign="right"; g.font="8px 'Courier New',monospace";   // live history date; glows while a skip flashes
     g.fillStyle=skipT>0?"#bfeaff":"#8a9aa2"; g.fillText(fmtDate(curDateMs),W-6,24); g.textAlign="left"; g.font="8px 'Courier New',monospace"; }
   // bottom ticker: always visible; shows the last CONQUERED issue (neutral label until the first one)
@@ -1112,12 +1158,15 @@ function render(){
   if(safe) drawSafe();
   for(const sh of safeShots) px(sh.x-camX-2,sh.y-camY-1,4,2,"#ffd");
   for(const s of stars) drawStar(s);
-  for(const a of [...actors].sort((p,q)=>p.x-q.x)) drawGuy(a);
+  for(const a of [...actors].sort((p,q)=>p.x-q.x)) if(!a.dead) drawGuy(a);
   for(const pl of planesActive) drawPlane(pl);
   for(const m of missiles) drawMissile(m);
   for(const b of balloons) drawBalloon(b);
   for(const bb of bubbles) drawBubble(bb);
   for(const p of fx){ g.globalAlpha=Math.max(0,p.life/24); px(p.x-camX,p.y-camY,2,2,p.color); } g.globalAlpha=1;
+  for(const gh of ghosts){ const x=gh.x-camX, y=gh.y-camY; g.globalAlpha=Math.min(0.7,gh.life/40);   // little rising ghost
+    g.fillStyle="#eaf2f7"; g.beginPath(); g.arc(x,y,4,Math.PI,0); g.lineTo(x+4,y+4); g.lineTo(x+2,y+2); g.lineTo(x,y+4); g.lineTo(x-2,y+2); g.lineTo(x-4,y+4); g.closePath(); g.fill();
+    g.fillStyle="#2a2f34"; px(x-2,y-1,1,1); px(x+1,y-1,1,1); } g.globalAlpha=1;
   drawSeams();
   drawCards(); g.restore(); drawHUD();
   if(timeFlash>0){ g.globalAlpha=0.26*timeFlash; g.fillStyle="#bfeaff"; g.fillRect(0,0,W,H);   // time-warp wash + scan streaks
