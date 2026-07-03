@@ -863,7 +863,7 @@ function update(){
   // clock's run out -> DON'T drop the vault yet: let any boss brawl (bullet time) finish, then give the
   // crew ~5s to regroup, THEN drop the safe from the sky.
   if(!finished){
-    if(endStage==="run" && frontX>FLAG_X){ endStage="regroup"; regroupT=0; SFX.stopMusic(); }
+    if(endStage==="run" && frontX>FLAG_X){ endStage="regroup"; regroupT=0; }   // keep the music going through the regroup -- it cuts when the vault erupts
     if(endStage==="regroup"){
       if(BOSSES.some(b=>b.spawned && !b.done)) regroupT=0;   // hold the countdown while a boss is still brawling
       else regroupT++;
