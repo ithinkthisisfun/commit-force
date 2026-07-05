@@ -31,7 +31,9 @@
   #pauseSave, #pauseShare { font-family:inherit; font-size:14px; letter-spacing:1px; padding:10px 20px; border:2px solid; cursor:pointer; text-shadow:0 1px 0 #000; background:#2a1015; color:#e7b7bd; }
   #pauseSave { border-color:#4a9ae8; } #pauseSave:hover { background:#2f7fd8; color:#fff; }
   #pauseShare { border-color:#e04a4a; } #pauseShare:hover { background:#c92b2b; color:#fff; }
-  #pauseContinue { margin-top:20px; font-family:inherit; font-size:16px; letter-spacing:3px; padding:11px 34px; border:none; cursor:pointer; background:#c92b2b; color:#fff; text-shadow:1px 1px 0 #000; box-shadow:0 4px 0 #7a1a1a; }
+  #pauseGuide { display:inline-block; margin-top:16px; font-family:inherit; font-size:11px; letter-spacing:1px; color:#d59aa2; text-decoration:none; border-bottom:1px dotted #7a3038; padding-bottom:1px; }
+  #pauseGuide:hover { color:#fff; border-bottom-color:#e04a4a; }
+  #pauseContinue { margin-top:18px; font-family:inherit; font-size:16px; letter-spacing:3px; padding:11px 34px; border:none; cursor:pointer; background:#c92b2b; color:#fff; text-shadow:1px 1px 0 #000; box-shadow:0 4px 0 #7a1a1a; }
   #pauseContinue:hover { background:#e04a4a; }
   #pauseContinue:active { transform:translateY(3px); box-shadow:0 1px 0 #7a1a1a; }
   /* speed control -- lower right */
@@ -54,12 +56,13 @@
     <button id="pauseSave" type="button" tabindex="-1">⤓ SAVE</button>
     <button id="pauseShare" type="button" tabindex="-1">⤴ SHARE</button>
   </div>
+  <a id="pauseGuide" href="elements.html" target="_blank" rel="noreferrer" tabindex="-1">📖 FIELD GUIDE — what is everything on screen?</a>
   <button id="pauseContinue" type="button" tabindex="-1">CONTINUE</button>
   <div class="pp-sub">or press SPACE</div>
 </div>
 <div id="hint">
   <b>ENTER</b> take/release control &nbsp;&bull;&nbsp; MOVE <b>&larr; &rarr;</b>/<b>A D</b> &nbsp;&bull;&nbsp;
-  JUMP <b>W</b>/<b>&uarr;</b> &nbsp;&bull;&nbsp; PUNCH <b>J</b> &nbsp;&bull;&nbsp; KICK <b>K</b> &nbsp;&bull;&nbsp; <b>SPACE</b> pause &nbsp;&bull;&nbsp; <b>R</b> replay &nbsp;&bull;&nbsp; <b>M</b> mute
+  JUMP <b>W</b>/<b>&uarr;</b> &nbsp;&bull;&nbsp; PUNCH <b>J</b> &nbsp;&bull;&nbsp; KICK <b>K</b> &nbsp;&bull;&nbsp; <b>SPACE</b> pause &amp; unpause &nbsp;&bull;&nbsp; <b>R</b> replay &nbsp;&bull;&nbsp; <b>M</b> mute
 </div>
 <div id="speedctl">
   <button id="slower" type="button" tabindex="-1" title="slower" aria-label="slower">&laquo;</button>

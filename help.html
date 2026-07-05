@@ -24,19 +24,35 @@
   .cta{ display:inline-block; margin-top:8px; padding:11px 16px; background:var(--red); color:#fff; text-decoration:none;
     letter-spacing:2px; font-size:14px; text-shadow:1px 1px 0 #000; box-shadow:0 4px 0 #7a1a1a; }
   .cta:hover{ background:var(--red2); }
-  @media (max-width:480px){ #card{ padding:18px 16px 22px; } h1{ font-size:26px; } h2{ font-size:15px; } p{ font-size:13px; } }
+  .tabs{ display:flex; gap:4px; margin:16px 0 0; border-bottom:2px solid #2a1015; }
+  .tab{ font-family:inherit; font-size:13px; letter-spacing:2px; padding:9px 15px; cursor:pointer; color:#c7b3b8;
+    background:transparent; border:2px solid transparent; border-bottom:none; margin-bottom:-2px; }
+  .tab:hover{ color:var(--red2); }
+  .tab.on{ color:#fff; background:#2a1015; border-color:#2a1015; }
+  .panel{ margin-top:20px; }
+  .panel[hidden]{ display:none; }
+  #card.wide{ width:min(980px,94vw); }
+  @media (max-width:480px){ #card{ padding:18px 16px 22px; } h1{ font-size:26px; } h2{ font-size:15px; } p{ font-size:13px; } .tab{ padding:8px 11px; font-size:12px; } }
 </style>
 </head>
 <body>
 <div id="card">
   <a class="back" href="./">‹ BACK TO COMMIT FORCE</a>
   <h1>COMMIT FORCE</h1>
-  <p class="sub">HELP &amp; FAQ</p>
 
+  <div class="tabs" role="tablist">
+    <button class="tab on" type="button" data-tab="faq">HELP &amp; FAQ</button>
+    <button class="tab" type="button" data-tab="guide">FIELD GUIDE</button>
+  </div>
+
+  <section id="tab-faq" class="panel">
   <h2>What is this?</h2>
   <p>A fun little app that turns your GitHub history into a 16-bit side-scroller. Point it at any public
   repo and its issues, pull requests, and commits play out as a running gauntlet — issue-trucks to
   battle, commit-stars flying overhead, pull-request airplanes, a boss fight, and a final vault to crack.</p>
+  <p>Want to know what each thing on screen <em>is</em> — and how your repo decides when it appears and
+  when it dies? See the <a href="#guide" data-open-tab="guide">Field Guide</a> tab above: a live picture of
+  every element with a plain-English note on what spawns it and what makes it go.</p>
 
   <h2>Why do I want this?</h2>
   <p>To amuse yourself, amaze your friends, and compare different teams. It's a weirdly satisfying way to
@@ -75,6 +91,28 @@
   token field on the hosted site, so nothing can leak or be turned on in production by accident.</p>
   <p>The full step-by-step (and how the local-token file works) lives in the repo:</p>
   <a class="cta" href="https://github.com/ithinkthisisfun/commit-force#run-locally-for-5000hr" target="_blank" rel="noreferrer">Read it on GitHub ›</a>
+  </section>
+
+  <section id="tab-guide" class="panel" hidden>
+    <p>Every issue, commit, and pull request in your repo becomes something on screen. Here's the whole
+    cast — each sprite below is drawn by the <em>actual game code</em>, rendered live. For each one: what
+    it is, and how your repo decides <strong>when it spawns</strong> and <strong>when it dies</strong>.</p>
+    <div id="field-guide"></div>
+  </section>
 </div>
+
+<script src="field-guide.js"></script>
+<script>
+  const card = document.getElementById("card");
+  function openTab(id){
+    document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x.dataset.tab === id));
+    document.getElementById("tab-faq").hidden = id !== "faq";
+    document.getElementById("tab-guide").hidden = id !== "guide";
+    card.classList.toggle("wide", id === "guide");
+  }
+  document.querySelectorAll(".tab").forEach(t => t.onclick = () => openTab(t.dataset.tab));
+  document.querySelectorAll("[data-open-tab]").forEach(a => a.onclick = e => { e.preventDefault(); location.hash = "guide"; openTab(a.dataset.openTab); });
+  if(location.hash === "#guide") openTab("guide");
+</script>
 </body>
 </html>

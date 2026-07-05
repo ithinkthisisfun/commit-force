@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Force — Field Guide</title>
+<meta name="description" content="Every creature in Commit Force — what each one is, and how a GitHub repo's data decides when it spawns and when it dies.">
+<meta name="theme-color" content="#c92b2b">
+<style>
+  :root{ --red:#c92b2b; --red2:#e04a4a; --ink:#e7b7bd; --panel:#1a0e12; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:#0a0608; color:var(--ink); font-family:"Courier New",monospace; }
+  body{ display:flex; align-items:flex-start; justify-content:center; padding:24px 0 56px; }
+  #card{ width:min(980px,94vw); background:var(--panel); border:3px solid #2a1015;
+    box-shadow:0 0 0 3px #000, 0 0 60px #000 inset; padding:26px 28px 34px; }
+  a.back{ display:inline-block; color:#c7b3b8; text-decoration:none; font-size:12px; letter-spacing:2px; margin:0 18px 16px 0; }
+  a.back:hover{ color:var(--red2); }
+  h1{ margin:0 0 4px; font-size:33px; letter-spacing:3px; color:var(--red); text-shadow:3px 3px 0 #000, 0 0 18px rgba(201,43,43,.5); }
+  .sub{ margin:0 0 8px; font-size:12px; color:#c7b3b8; letter-spacing:2px; }
+  .lede{ margin:0 0 22px; font-size:14px; line-height:1.65; color:#dcc7cc; max-width:70ch; }
+  .lede code{ background:#0c0709; border:1px solid #3a1620; padding:1px 5px; font-size:13px; color:#ffd; }
+  footer{ margin-top:26px; font-size:12px; color:#8a6a70; line-height:1.7; }
+  footer a{ color:var(--red2); }
+  @media (max-width:480px){ #card{ padding:18px 15px 24px; } h1{ font-size:26px; } }
+</style>
+</head>
+<body>
+<div id="card">
+  <a class="back" href="./">‹ BACK TO COMMIT FORCE</a>
+  <a class="back" href="help.html">HELP &amp; FAQ ›</a>
+  <h1>FIELD GUIDE</h1>
+  <p class="sub">EVERY CREATURE IN THE GAUNTLET</p>
+  <p class="lede">Commit Force turns a GitHub repo's history into a running level. Every issue, commit,
+  and pull request becomes a thing on screen. Here's the whole bestiary — each sprite below is drawn
+  by the <em>actual game code</em>, rendered live. For each one: what it is, and how the repo's data
+  decides <b>when it spawns</b> and <b>when it dies or disappears</b>.</p>
+
+  <div id="field-guide"></div>
+
+  <footer>
+    Sprites are rendered by the same routines that draw them in <code style="background:#0c0709;border:1px solid #3a1620;padding:1px 4px;color:#ffd">play.html</code>.
+    Want the big picture instead? Read the <a href="help.html">Help &amp; FAQ</a> or
+    <a href="https://github.com/ithinkthisisfun/commit-force" target="_blank" rel="noreferrer">the README on GitHub ›</a>
+  </footer>
+</div>
+
+<script src="field-guide.js"></script>
+</body>
+</html>
