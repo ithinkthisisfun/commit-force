@@ -36,12 +36,21 @@
   #pauseContinue { margin-top:18px; font-family:inherit; font-size:16px; letter-spacing:3px; padding:11px 34px; border:none; cursor:pointer; background:#c92b2b; color:#fff; text-shadow:1px 1px 0 #000; box-shadow:0 4px 0 #7a1a1a; }
   #pauseContinue:hover { background:#e04a4a; }
   #pauseContinue:active { transform:translateY(3px); box-shadow:0 1px 0 #7a1a1a; }
-  /* speed control -- lower right */
-  #speedctl { position:absolute; bottom:8px; right:8px; z-index:9; display:flex; align-items:center; gap:6px; font-family:inherit; user-select:none; }
+  /* speed control -- lower right. position:fixed + safe-area so iOS Safari's toolbar / home bar can't swallow it. */
+  #speedctl { position:fixed; bottom:calc(8px + env(safe-area-inset-bottom,0px)); right:calc(8px + env(safe-area-inset-right,0px)); z-index:9; display:flex; align-items:center; gap:6px; font-family:inherit; user-select:none; }
   #speedctl button { font-family:inherit; font-size:14px; line-height:1; padding:5px 10px; background:#2a1015; color:#e7b7bd; border:2px solid #5a2530; cursor:pointer; text-shadow:0 1px 0 #000; }
   #speedctl button:hover:not(:disabled) { background:#c92b2b; color:#fff; border-color:#e04a4a; }
   #speedctl button:disabled { opacity:.4; cursor:default; }
   #speedlbl { min-width:36px; text-align:center; font-size:11px; letter-spacing:1px; color:#e7b7bd; text-shadow:0 1px 0 #000; background:rgba(10,6,8,0.6); padding:3px 4px; }
+  /* touch devices: bigger tap targets, and move the hint up top so it doesn't sit under the speed control */
+  @media (pointer: coarse){
+    #hint { top:calc(env(safe-area-inset-top,0px) + 10px); bottom:auto; font-size:13px; color:#9a4048; }
+    #save, #share { top:calc(env(safe-area-inset-top,0px) + 8px); font-size:13px; padding:9px 13px; }
+    #save { right:104px; }
+    #speedctl { gap:12px; bottom:calc(env(safe-area-inset-bottom,0px) + 16px); right:calc(env(safe-area-inset-right,0px) + 12px); }
+    #speedctl button { font-size:22px; padding:12px 18px; min-width:50px; }
+    #speedlbl { font-size:15px; min-width:54px; padding:8px 6px; }
+  }
 </style>
 </head>
 <body>
@@ -77,8 +86,8 @@
 "use strict";
 const cv=document.getElementById("c"), g=cv.getContext("2d"), W=cv.width, H=cv.height;
 g.imageSmoothingEnabled=false;
-function fit(){ const s=Math.max(1,Math.min(Math.floor(innerWidth/W),Math.floor(innerHeight/H)));
-  cv.style.width=(W*s)+"px"; cv.style.height=(H*s)+"px"; }
+function fit(){ let s=Math.min(innerWidth/W, innerHeight/H); if(s>=1) s=Math.floor(s);   // crisp integer upscaling when it fits; fractional so it never overflows (or distorts) a small phone screen
+  cv.style.width=Math.round(W*s)+"px"; cv.style.height=Math.round(H*s)+"px"; }
 addEventListener("resize",fit); fit();
 
 // ---- input --------------------------------------------------------------
@@ -421,6 +430,15 @@ const STAR_RATE=5;   // commits flung per frame -> a steady shower whatever the 
 let resolved=0, oBattled=0, oIdle=0, prMerged=0, prRejected=0;
 let fx=[], stars=[], cards=[], planesActive=[], missiles=[], balloons=[], bubbles=[], splats=[], ghosts=[], fallen=0, lastEvent="";
 let tickerText="", tickerCol="#e7d7c0", tickerHold=0, lastOoh=0, banner="", bannerT=0, zoom=1;
+
+// ---- pause: SPACE on desktop, a TAP on touch (phones have no spacebar) ----
+function setPaused(v){ if(bgMode || paused===v) return; paused=v; lastEvent = v ? "paused -- tap or SPACE to resume" : "resumed"; SFX.resume(); }
+cv.addEventListener("pointerup", e=>{ if(e.pointerType!=="mouse") setPaused(!paused); });                                   // tap the play area to pause (touch only; desktop mouse clicks stay inert)
+pausePanel.addEventListener("pointerup", e=>{ if(paused && e.target===pausePanel && e.pointerType!=="mouse") setPaused(false); });  // tap the dim veil (not a button) to resume
+if(matchMedia("(pointer: coarse)").matches){                                                                                // touch device -> swap the keyboard hints for tap ones
+  const hint=document.getElementById("hint"); if(hint) hint.innerHTML='<b>TAP</b> the game to pause / resume &nbsp;&bull;&nbsp; <b>&laquo;</b> <b>&raquo;</b> speed';
+  const sub=document.querySelector(".pp-sub"); if(sub) sub.textContent='or tap the screen to resume';
+}
 let parade=[], paradeQueue=[], paradeTick=0, paradeOn=false;   // post-fireworks: open issues roar past
 let endStage="run", safe=null, safeShots=[], finishFlagX=0, flagRaise=0, regroupT=0;   // run -> regroup -> safe -> win -> parade
 const REGROUP=300;   // ~5s regroup after the boss finishes, then the vault appears
@@ -722,7 +740,7 @@ function pickRider(o){ if(finished) return null;   // vault stage: no more board
 function update(){
   if(hit("r")) return reset();
   if(bgMode && finished && finishT>460) return reset();   // loop the attract demo
-  if(!bgMode && hit(" ")){ paused=!paused; lastEvent = paused ? "paused -- SPACE to resume" : "resumed"; }   // SPACE toggles pause
+  if(!bgMode && hit(" ")) setPaused(!paused);   // SPACE toggles pause (taps are wired up separately for touch)
   if(paused){ for(const k in pressed) delete pressed[k]; return; }   // freeze everything -- time doesn't advance -- until unpaused
   time++;
   if(hit("enter")){ if(mode==="auto"){ mode="play"; lead.controlled=true; lastEvent="you grabbed "+lead.name; }
